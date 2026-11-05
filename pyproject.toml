@@ -12,6 +12,8 @@ dependencies = [
     "pydantic>=2",
     "pydantic-settings",
     "structlog",
+    "numpy",
+    "opencv-python-headless",
 ]
 
 [project.optional-dependencies]
