@@ -54,33 +54,44 @@ YouTube URL → ingest → [scoreboard+plates] ┐
                      → [speech]              ┘
 ```
 
-Раскладка репозитория:
+Раскладка репозитория. Пометка «план» означает, что модуля или файла в коде ещё нет (состояние на 2026-11-05):
 
 ```
 .
 ├── CLAUDE.md  GIT.md  MEMORY.md  SKILLS.md  TESTING.md
-├── README.md  pyproject.toml  .env.example
+├── README.md  pyproject.toml  .env.example (план)
 ├── scripts/            # check.py: полный контроль качества
-├── configs/            # пороги, окна NMS, лексиконы, шаблоны плашек (yaml)
-├── docs/               # TZ.md, протокол разметки
+├── configs/            # план: пороги, окна NMS, лексиконы, шаблоны плашек (yaml); пока пороги лежат в pydantic-моделях стадий (D-031)
+├── docs/               # TZ.md; протокол разметки (план)
 ├── src/aicoach/
-│   ├── cli.py          # точка входа: python -m aicoach.cli <stage>
-│   ├── config.py       # Settings (pydantic-settings)
+│   ├── cli.py          # точка входа: python -m aicoach.cli <команда>; команды: scoreboard, scoreboard-calibrate
+│   ├── status.py       # status.json каталога матча: состояние стадий (running, done, failed) и прогресс
 │   ├── errors.py       # иерархия исключений
-│   ├── logging_setup.py
-│   ├── i18n/
-│   ├── domain/         # модели, enum, преобразование времени
-│   ├── ingest/  scoreboard/  spotting/  speech/  fusion/
-│   ├── storage/        # SQLite-репозиторий, миграции
-│   ├── agent/          # инструменты, проверка ссылок, промпты
-│   ├── eval/           # сопоставление, метрики, отчёт
-│   ├── export/         # клипы FFmpeg
-│   └── ui/
+│   ├── logging_setup.py  # structlog, JSON-строки в stderr
+│   ├── config.py       # план: Settings (pydantic-settings)
+│   ├── i18n/           # план
+│   ├── domain/         # события и категории (events.py)
+│   ├── scoreboard/     # стадия табло: часы, счёт, смены счёта, добавленное время, соответствие t_v и минуты
+│   │   ├── stage.py        # запуск стадии, кэш по ключу, scoreboard.json и status.json
+│   │   ├── calibrate.py    # калибровка: эталон табло, кластеры символов, образцы цифр
+│   │   ├── video.py        # последовательное чтение кадров (OpenCV, GPU при наличии)
+│   │   ├── imaging.py      # область табло и параметры чтения пикселей
+│   │   ├── board.py  reader.py  glyphs.py   # видимость табло, чтение кадра, цифры по образцам
+│   │   ├── assemble.py  score.py  offsets.py  mapping.py   # чистая сборка результата: история счёта, сегменты видимости, смещение часов, соответствие минуты и времени видео
+│   │   └── config.py  schemas.py   # пороги и окна; pydantic-модели scoreboard.json
+│   ├── storage/        # SQLite-хранилище событий: db.py, schema.py, models.py, repository.py (миграций нет, версия схемы 1)
+│   ├── eval/           # сопоставление, метрики, bootstrap, схемы входа, отчёт в Markdown
+│   ├── ingest/  spotting/  speech/  fusion/   # план
+│   ├── agent/          # план: инструменты, проверка ссылок, промпты
+│   ├── export/         # план: клипы FFmpeg
+│   └── ui/             # план
 ├── tests/              # структура в TESTING.md
 ├── data/  mlruns/  scratch/   # в .gitignore
 ```
 
 Каждая стадия: отдельная команда, чистые функции внутри, вход и выход через файл со схемой, пропуск уже готового, идемпотентность (тот же вход даёт тот же выход).
+
+Где лежат результаты. Стадия `scoreboard` принимает видео аргументом `--video` и пишет `scoreboard.json`, `status.json` и образцы цифр `scoreboard_templates/` в каталог этого видео, а не в `data/<match_id>/` (D-030; каталог видео и образцы не попадают в git). Остальные стадии, когда появятся, по плану пишут в каталог матча под `Settings.data_dir`. Состояние стадий читает интерфейс из `status.json`. Промежуточные картинки калибровки лежат только в `scratch/`.
 
 ## 5. Доменные инварианты
 
