@@ -50,7 +50,7 @@ Football AI Coach превращает запись матча КПЛ в кат�
 
 ```
 YouTube URL → ingest → [scoreboard+plates] ┐
-                     → [features → spotting] ├→ fusion → store (SQLite) → ui / agent / eval
+                     → [features → spotting] ├→ fusion → storage (SQLite) → ui / agent / eval
                      → [speech]              ┘
 ```
 
@@ -71,7 +71,7 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 │   ├── i18n/
 │   ├── domain/         # модели, enum, преобразование времени
 │   ├── ingest/  scoreboard/  spotting/  speech/  fusion/
-│   ├── store/          # SQLite-репозиторий, миграции
+│   ├── storage/        # SQLite-репозиторий, миграции
 │   ├── agent/          # инструменты, проверка ссылок, промпты
 │   ├── eval/           # сопоставление, метрики, отчёт
 │   ├── export/         # клипы FFmpeg

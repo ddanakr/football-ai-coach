@@ -34,20 +34,24 @@ def add_predictions(
     run_id: str,
     predictions: Sequence[NewPrediction],
 ) -> list[int]:
-    """Store a batch of predictions in one transaction: all of them or none.
+    """Store the predictions of one run in one transaction: all of them or none.
+
+    A run is the complete set of events of the match and is written by the fusion stage
+    only. The new run replaces the previous one in `events_current` (D-028); the older
+    predictions stay in the table. An empty batch writes nothing, so it does not start a run.
 
     Args:
         conn: Open connection from `connect`.
         match_id: Match the predictions belong to.
-        run_id: Identifier of the run that produced them.
-        predictions: The batch; may be empty.
+        run_id: Identifier of the run that produced them; new for this match.
+        predictions: The whole run; may be empty.
 
     Returns:
         The ids of the new predictions in input order (the event id is `p:<id>`).
 
     Raises:
-        StorageError: Empty `match_id` or `run_id`, or the database rejected a row; in that
-            case nothing from the batch is stored.
+        StorageError: Empty `match_id` or `run_id`, `run_id` already used for this match,
+            or the database rejected a row; in that case nothing from the batch is stored.
     """
     if not match_id or not run_id:
         msg = "match_id and run_id must not be empty"
@@ -56,6 +60,13 @@ def add_predictions(
         return []
     ids: list[int] = []
     with transaction(conn), translate_errors("cannot store predictions"):
+        # Inside the write transaction, so two writers cannot both pass this check.
+        if conn.execute(
+            "SELECT 1 FROM predictions WHERE match_id = ? AND run_id = ? LIMIT 1",
+            (match_id, run_id),
+        ).fetchone():
+            msg = f"run {run_id!r} already has predictions for match {match_id!r}"
+            raise StorageError(msg)
         for p in predictions:
             row = conn.execute(
                 _INSERT_PREDICTION,
@@ -73,6 +84,22 @@ def add_predictions(
             ).fetchone()
             ids.append(int(row["id"]))
     return ids
+
+
+def latest_run_id(conn: sqlite3.Connection, match_id: str) -> str | None:
+    """Return the `run_id` of the latest run of a match, or `None` if it has no predictions.
+
+    The latest run is the one of the prediction with the largest id; it is the run that
+    `events_current` shows.
+
+    Raises:
+        StorageError: The database failed.
+    """
+    with translate_errors("cannot read the latest run"):
+        row = conn.execute(
+            "SELECT run_id FROM latest_runs WHERE match_id = ?", (match_id,)
+        ).fetchone()
+    return None if row is None else str(row["run_id"])
 
 
 def _require_live_event(conn: sqlite3.Connection, match_id: str, target: str) -> None:
@@ -225,7 +252,8 @@ def count_effective_edits(conn: sqlite3.Connection, match_id: str) -> int:
     """Count the edits of a match that are in force: the "edits per match" metric.
 
     Edits cancelled by an undo and the `undo` records themselves are not counted, nor are
-    edits that belong to an added event whose `add` was undone.
+    edits that belong to an added event whose `add` was undone, nor edits of predictions
+    from earlier runs (they are not applied, D-028). `add` edits count in every run.
     """
     with translate_errors("cannot count edits"):
         row = conn.execute(

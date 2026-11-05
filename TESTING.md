@@ -15,7 +15,7 @@
 
 ## 2. Покрытие
 
-- **Не ниже 80%** (по строкам и ветвям) для модулей обработки данных и ML-пайплайнов: `domain`, `ingest`, `scoreboard`, `spotting`, `speech`, `fusion`, `store`, `agent`, `eval`, `export`.
+- **Не ниже 80%** (по строкам и ветвям) для модулей обработки данных и ML-пайплайнов: `domain`, `ingest`, `scoreboard`, `spotting`, `speech`, `fusion`, `storage`, `agent`, `eval`, `export`.
 - Из расчёта исключены `ui/`, `cli.py` и тонкие обёртки, которые только вызывают стороннюю модель. Логика (разбор, нормализация, пороги, решения) выносится в чистые функции, и они покрываются в полном объёме.
 - `# pragma: no cover` допустим только на строках, которые вызывают настоящую модель или внешний сервис, и только с комментарием-причиной.
 - Падение покрытия ниже порога ломает `python scripts/check.py`. Занижать порог или расширять исключения ради прохождения запрещено.
@@ -180,13 +180,13 @@ tests/
 │   ├── speech/       test_lexicon.py        test_language_routing.py   test_name_normalization.py
 │   ├── fusion/       test_rules.py          test_replay_suppression.py
 │   ├── eval/         test_matching.py       test_metrics.py            test_bootstrap.py
-│   ├── store/        test_edits_log.py      test_events_view.py
+│   ├── storage/      test_edits_log.py      test_events_view.py
 │   ├── agent/        test_tools.py          test_citation_validator.py
 │   └── export/       test_clip_bounds.py
 ├── integration/
 │   ├── test_stage_chain_synthetic.py        # цепочка стадий на синтетическом «матче»
 │   ├── test_ffmpeg_clip_export.py           # нужен ffmpeg, сети нет
-│   ├── test_store_concurrency.py            # чтение во время записи
+│   ├── test_storage_concurrency.py          # чтение во время записи
 │   └── test_agent_with_fake_llm.py          # агент целиком на тестовой модели
 └── data_validation/
     ├── test_event_schema.py                 # схемы events, plates, transcript

@@ -17,6 +17,7 @@ from aicoach.storage import (
     count_effective_edits,
     get_current_events,
     init_db,
+    latest_run_id,
     transaction,
     undo_edit,
 )
@@ -635,6 +636,186 @@ def test_new_prediction_rejects_invalid_values(kwargs: dict[str, object]) -> Non
         NewPrediction.model_validate({**base, **kwargs})
 
 
+# --- runs: only the latest run of a match is current (D-028) ---------------------------
+
+
+def _run(conn: sqlite3.Connection, run_id: str, *times: float, match_id: str = MATCH) -> list[int]:
+    """Write one run of shots at the given video times."""
+    return add_predictions(
+        conn, match_id, run_id, [make_new_prediction("shot", t, score=0.5) for t in times]
+    )
+
+
+@pytest.mark.unit
+def test_events_current_shows_only_the_latest_run_and_keeps_the_old_one(
+    conn: sqlite3.Connection,
+) -> None:
+    _run(conn, "run-1", 10.0, 20.0, 30.0)
+    new_ids = _run(conn, "run-2", 15.0, 25.0)
+
+    events = get_current_events(conn, MATCH)
+
+    assert [e.event_id for e in events] == [f"p:{i}" for i in new_ids]
+    assert [e.t_v for e in events] == [15.0, 25.0]
+    assert latest_run_id(conn, MATCH) == "run-2"
+    assert len(_table_rows(conn, "predictions")) == 5  # the old run stays for audit
+
+
+@pytest.mark.unit
+def test_latest_run_is_the_one_written_last_not_the_one_sorted_last(
+    conn: sqlite3.Connection,
+) -> None:
+    _run(conn, "b", 10.0)
+    _run(conn, "a", 20.0)
+
+    assert latest_run_id(conn, MATCH) == "a"
+    assert [e.t_v for e in get_current_events(conn, MATCH)] == [20.0]
+
+
+@pytest.mark.unit
+def test_edit_of_a_prediction_from_an_old_run_does_not_touch_the_current_run(
+    conn: sqlite3.Connection,
+) -> None:
+    old_ids = _run(conn, "run-1", 10.0, 20.0)
+    add_edit(conn, MATCH, "move", author="a", target=f"p:{old_ids[0]}", t_v=11.0)
+    add_edit(conn, MATCH, "delete", author="a", target=f"p:{old_ids[1]}")
+    new_ids = _run(conn, "run-2", 10.0, 20.0)  # the same moments, new predictions
+
+    events = get_current_events(conn, MATCH, include_deleted=True)
+
+    assert [(e.event_id, e.t_v, e.deleted, e.n_edits) for e in events] == [
+        (f"p:{new_ids[0]}", 10.0, False, 0),
+        (f"p:{new_ids[1]}", 20.0, False, 0),
+    ]
+    assert len(_table_rows(conn, "edits")) == 2  # the journal keeps them
+
+
+@pytest.mark.unit
+def test_edit_of_a_prediction_from_an_old_run_is_rejected(conn: sqlite3.Connection) -> None:
+    old_ids = _run(conn, "run-1", 10.0)
+    _run(conn, "run-2", 10.0)
+
+    with pytest.raises(StorageError, match="does not exist"):
+        add_edit(conn, MATCH, "verify", author="a", target=f"p:{old_ids[0]}")
+
+    assert _table_rows(conn, "edits") == []
+
+
+@pytest.mark.unit
+def test_add_predictions_rejects_a_run_id_that_already_exists_for_the_match(
+    conn: sqlite3.Connection,
+) -> None:
+    _run(conn, "run-1", 10.0)
+    _run(conn, "run-2", 20.0)
+
+    with pytest.raises(StorageError, match="already has predictions"):
+        _run(conn, "run-1", 30.0, 40.0)  # an old run id, not only the latest one
+
+    assert [e.t_v for e in get_current_events(conn, MATCH)] == [20.0]  # still run-2
+    assert len(_table_rows(conn, "predictions")) == 2
+    assert not conn.in_transaction
+
+
+@pytest.mark.unit
+def test_add_predictions_allows_the_same_run_id_in_another_match(
+    conn: sqlite3.Connection,
+) -> None:
+    _run(conn, "run-1", 10.0)
+
+    _run(conn, "run-1", 99.0, match_id=OTHER)
+
+    assert [e.t_v for e in get_current_events(conn, OTHER)] == [99.0]
+    assert [e.t_v for e in get_current_events(conn, MATCH)] == [10.0]
+
+
+@pytest.mark.unit
+def test_match_without_predictions_has_no_latest_run_and_no_events(
+    conn: sqlite3.Connection,
+) -> None:
+    assert latest_run_id(conn, MATCH) is None
+    assert get_current_events(conn, MATCH) == []
+    assert count_effective_edits(conn, MATCH) == 0
+
+
+@pytest.mark.unit
+def test_empty_batch_does_not_start_a_run(conn: sqlite3.Connection) -> None:
+    _run(conn, "run-1", 10.0)
+
+    assert add_predictions(conn, MATCH, "run-2", []) == []
+
+    assert latest_run_id(conn, MATCH) == "run-1"
+    assert [e.t_v for e in get_current_events(conn, MATCH)] == [10.0]
+
+
+@pytest.mark.unit
+def test_events_added_by_the_user_stay_visible_in_every_run(conn: sqlite3.Connection) -> None:
+    added = add_edit(conn, MATCH, "add", author="a", type=EventType.GOAL, t_v=500.0)
+    assert added.event_id is not None
+    assert [e.event_id for e in get_current_events(conn, MATCH)] == [added.event_id]  # no run yet
+    _run(conn, "run-1", 10.0)
+    add_edit(conn, MATCH, "move", author="a", target=added.event_id, t_v=501.0)
+
+    _run(conn, "run-2", 20.0)
+
+    events = get_current_events(conn, MATCH)
+    assert [(e.origin, e.t_v) for e in events] == [("prediction", 20.0), ("user", 501.0)]
+    assert events[1].n_edits == 1  # its move is still applied
+    assert add_edit(conn, MATCH, "verify", author="a", target=added.event_id).action == "verify"
+
+
+@pytest.mark.unit
+def test_new_run_of_one_match_does_not_touch_another_match(conn: sqlite3.Connection) -> None:
+    _run(conn, "run-1", 10.0, 20.0)
+    _run(conn, "run-1", 5.0, match_id=OTHER)
+
+    _run(conn, "run-2", 30.0)
+
+    assert [e.t_v for e in get_current_events(conn, MATCH)] == [30.0]
+    assert [e.t_v for e in get_current_events(conn, OTHER)] == [5.0]
+    assert latest_run_id(conn, OTHER) == "run-1"
+
+
+@pytest.mark.unit
+def test_count_effective_edits_after_a_new_run_counts_only_current_events(
+    conn: sqlite3.Connection,
+) -> None:
+    old_ids = _run(conn, "run-1", 10.0, 20.0)
+    add_edit(conn, MATCH, "move", author="a", target=f"p:{old_ids[0]}", t_v=11.0)
+    add_edit(conn, MATCH, "verify", author="a", target=f"p:{old_ids[1]}")
+    added = add_edit(conn, MATCH, "add", author="a", type=EventType.GOAL, t_v=500.0)
+    removed = add_edit(conn, MATCH, "add", author="a", type=EventType.FOUL, t_v=600.0)
+    undo_edit(conn, removed.id, "a")
+    assert count_effective_edits(conn, MATCH) == 3
+
+    new_ids = _run(conn, "run-2", 10.0)
+    assert count_effective_edits(conn, MATCH) == 1  # only the user's add survives
+
+    add_edit(conn, MATCH, "delete", author="a", target=f"p:{new_ids[0]}")
+    add_edit(conn, MATCH, "move", author="a", target=f"e:{added.id}", t_v=501.0)
+    assert count_effective_edits(conn, MATCH) == 3  # deleted events still count
+
+
+@pytest.mark.unit
+def test_init_db_replaces_an_outdated_view_definition(tmp_path: Path) -> None:
+    path = tmp_path / "events.db"
+    init_db(path)
+    with connect(path) as conn:
+        _run(conn, "run-1", 10.0)
+        _run(conn, "run-2", 20.0)
+        conn.execute("DROP VIEW events_current")
+        conn.execute(  # the pre-D-028 shape: every run is shown
+            "CREATE VIEW events_current AS SELECT 'p:' || id AS event_id, match_id, type, t_v, "
+            "half, score, status, team, source, 'prediction' AS origin, 0 AS verified, "
+            "0 AS deleted, 0 AS n_edits FROM predictions"
+        )
+        assert len(get_current_events(conn, MATCH)) == 2
+
+    init_db(path)
+
+    with connect(path) as conn:
+        assert [e.t_v for e in get_current_events(conn, MATCH)] == [20.0]
+
+
 # --- connection, schema, transactions --------------------------------------------------
 
 
@@ -746,7 +927,7 @@ def test_reader_is_not_blocked_by_an_open_write_transaction(db_path: Path) -> No
         with transaction(writer):
             writer.execute(
                 "INSERT INTO predictions (match_id, type, t_v, source, run_id) "
-                "VALUES (?, 'shot', 1.0, 'model', 'r2')",
+                "VALUES (?, 'shot', 1.0, 'model', 'run-1')",
                 (MATCH,),
             )
             # Uncommitted: the reader sees the old state, immediately and without an error.

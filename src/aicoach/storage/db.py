@@ -89,6 +89,10 @@ def transaction(conn: sqlite3.Connection) -> Iterator[None]:
 def init_db(path: Path) -> None:
     """Create the database file and schema if absent; safe to call again.
 
+    Views are recreated on every call, so each call takes the write lock briefly. Call it
+    once at the start of a stage or an app session, not on every UI rerun, and before any
+    reader uses `events_current` (a database never passed through here may hold old views).
+
     Raises:
         StorageError: The file is not a SQLite database, or its schema version is not the
             one this code expects.
@@ -101,6 +105,10 @@ def init_db(path: Path) -> None:
             msg = f"{path}: schema version {version}, expected {SCHEMA_VERSION}"
             raise StorageError(msg)
         with transaction(conn), translate_errors(f"cannot create schema in {path}"):
-            for statement in (*STATEMENTS, *VIEWS):
+            for statement in STATEMENTS:
                 conn.execute(statement)
+            for name in reversed(VIEWS):  # dependants first
+                conn.execute(f"DROP VIEW IF EXISTS {name}")
+            for definition in VIEWS.values():
+                conn.execute(definition)
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")

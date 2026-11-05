@@ -1,8 +1,13 @@
 """SQL schema of the event store (TZ section 9, "База").
 
 `predictions` and `edits` are append-only, enforced by triggers. The current state of an
-event is never stored: it is computed by the view `events_current` from the predictions
-plus the effective edits (those that were not undone). Deleting an event only hides it.
+event is never stored: it is computed by the view `events_current` from the predictions of
+the latest run of the match plus the effective edits (those that were not undone).
+Deleting an event only hides it. Older runs stay in `predictions` for audit but are not
+shown, and edits of their predictions stay in the journal but are not applied (D-028).
+
+Views hold no data, so `init_db` drops and recreates them on every call: a changed view
+definition reaches existing databases without a schema version bump.
 """
 
 SCHEMA_VERSION = 1
@@ -74,22 +79,34 @@ STATEMENTS: tuple[str, ...] = (
 
 # Edits that count: everything except undo records and the edits that an undo cancelled.
 EFFECTIVE_EDITS_VIEW = """
-CREATE VIEW IF NOT EXISTS effective_edits AS
+CREATE VIEW effective_edits AS
 SELECT e.*
 FROM edits AS e
 WHERE e.action <> 'undo'
   AND NOT EXISTS (SELECT 1 FROM edits AS u WHERE u.undo_of = e.id)
 """
 
-# One row per event: every prediction and every effective `add`, with the effective edits
-# applied. The latest move sets t_v, the latest retype sets type, any delete sets
-# `deleted`, any verify sets `verified`. Nothing is removed from the base tables.
+# The latest run of a match is the run_id of its prediction row with the largest id. One run
+# is the complete set of events of the match (written by the fusion stage only), so the
+# rows of earlier runs are superseded, not merged.
+LATEST_RUNS_VIEW = """
+CREATE VIEW latest_runs AS
+SELECT p.match_id, p.run_id
+FROM predictions AS p
+WHERE p.id = (SELECT MAX(q.id) FROM predictions AS q WHERE q.match_id = p.match_id)
+"""
+
+# One row per event: every prediction of the latest run and every effective `add`, with the
+# effective edits applied. The latest move sets t_v, the latest retype sets type, any
+# delete sets `deleted`, any verify sets `verified`. Nothing is removed from the base
+# tables; edits that target a prediction of an older run match no row and are not applied.
 EVENTS_CURRENT_VIEW = """
-CREATE VIEW IF NOT EXISTS events_current AS
+CREATE VIEW events_current AS
 WITH base AS (
     SELECT 'p:' || p.id AS event_id, p.match_id, p.type, p.t_v, p.half, p.score,
            p.status, p.team, p.source, 'prediction' AS origin
     FROM predictions AS p
+    JOIN latest_runs AS r ON r.match_id = p.match_id AND r.run_id = p.run_id
     UNION ALL
     SELECT 'e:' || a.id, a.match_id, a.type, a.t_v, NULL, NULL,
            'manual', NULL, NULL, 'user'
@@ -119,4 +136,9 @@ SELECT
 FROM base AS b
 """
 
-VIEWS: tuple[str, ...] = (EFFECTIVE_EDITS_VIEW, EVENTS_CURRENT_VIEW)
+# Name -> definition, in dependency order (a view comes after the views it reads).
+VIEWS: dict[str, str] = {
+    "effective_edits": EFFECTIVE_EDITS_VIEW,
+    "latest_runs": LATEST_RUNS_VIEW,
+    "events_current": EVENTS_CURRENT_VIEW,
+}
