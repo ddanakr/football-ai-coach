@@ -17,7 +17,7 @@ from typing import Protocol
 import structlog
 from pydantic import TypeAdapter, ValidationError
 
-from aicoach.errors import AicoachError, ConfigError, ScoreboardParseError, StorageError
+from aicoach.errors import ConfigError, ScoreboardParseError, StorageError
 from aicoach.logging_setup import stage_logger
 from aicoach.scoreboard.assemble import RawReading, assemble_result
 from aicoach.scoreboard.board import load_reference
@@ -43,7 +43,7 @@ from aicoach.scoreboard.video import (
     probe_video,
     sample_count,
 )
-from aicoach.status import write_status
+from aicoach.status import State, write_status
 
 Logger = structlog.typing.FilteringBoundLogger
 STAGE = "scoreboard"
@@ -138,14 +138,26 @@ class Progress:
     """Writes status.json when progress moved enough; remembers the last value for errors."""
 
     match_dir: Path
+    log: Logger
     last_written: float = 0.0
     value: float = 0.0
 
     def update(self, value: float) -> None:
         self.value = value
         if value - self.last_written >= _PROGRESS_STEP:
-            write_status(self.match_dir, STAGE, "running", value)
+            _set_status(self.match_dir, "running", value, self.log)
             self.last_written = value
+
+
+def _set_status(
+    match_dir: Path, state: State, progress: float, log: Logger, error: str | None = None
+) -> None:
+    """Write status.json; a failure (for example the UI holds the file open) is logged and
+    never stops the stage, because the status is only a progress report."""
+    try:
+        write_status(match_dir, STAGE, state, progress, error=error)
+    except StorageError:
+        log.warning("status_write_failed", state=state)
 
 
 def read_samples(
@@ -200,14 +212,14 @@ def run_scoreboard(
     config = config or ScoreboardConfig()
     log = stage_logger(STAGE, match_id)
     match_dir = video.parent
-    progress = Progress(match_dir)
+    progress = Progress(match_dir, log)
     started = time.perf_counter()
     try:
         result, from_cache = _run(video, match_dir, config, force, source_factory, progress, log)
     except BaseException as err:  # any failure, even Ctrl+C, must not leave "running" behind
         _record_failure(match_dir, progress.value, err, log, started)
         raise
-    write_status(match_dir, STAGE, "done", 1.0)
+    _set_status(match_dir, "done", 1.0, log)
     event = "stage_skipped" if from_cache else "stage_done"
     log.info(event, n_samples=result.stats.n_samples, duration_ms=_ms(started))
     return result
@@ -224,10 +236,7 @@ def _record_failure(
     original error. The previous `scoreboard.json` is never touched here."""
     reason = str(err) or type(err).__name__
     log.exception("stage_failed", reason=reason, duration_ms=_ms(started))
-    try:
-        write_status(match_dir, STAGE, "failed", progress, error=reason)
-    except AicoachError:
-        log.warning("status_write_failed", reason="could not record the failure in status.json")
+    _set_status(match_dir, "failed", progress, log, error=reason)
 
 
 def _run(
@@ -249,7 +258,7 @@ def _run(
         cached = _load_cached(out_path, key, log)
         if cached is not None:
             return cached, True
-    write_status(match_dir, STAGE, "running", 0.0)
+    _set_status(match_dir, "running", 0.0, log)
     step = frame_step(info.fps, config.sample_fps)
     source = source_factory(video, step, config.hw_accel)
     t_v, readings = read_samples(source, info, step, ctx, mode, progress)

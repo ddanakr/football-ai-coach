@@ -49,6 +49,12 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _match_id(args: argparse.Namespace) -> str:
+    """The given id, or the name of the video's directory (also for a bare `src.mp4`)."""
+    given: str | None = args.match_id
+    return given or args.video.resolve().parent.name
+
+
 def _config(hw_accel: bool, sample_fps: float | None = None) -> ScoreboardConfig:
     """Build the stage config; an invalid value is a configuration error, not a traceback."""
     values: dict[str, object] = {"hw_accel": hw_accel}
@@ -64,7 +70,7 @@ def _config(hw_accel: bool, sample_fps: float | None = None) -> ScoreboardConfig
 
 def _scoreboard(args: argparse.Namespace) -> int:
     config = _config(hw_accel=not args.cpu, sample_fps=args.sample_fps)
-    match_id = args.match_id or args.video.parent.name
+    match_id = _match_id(args)
     result = run_scoreboard(args.video, match_id, config, force=args.force)
     stats = result.stats
     sys.stdout.write(
@@ -76,7 +82,7 @@ def _scoreboard(args: argparse.Namespace) -> int:
 
 
 def _calibrate(args: argparse.Namespace) -> int:
-    match_id = args.match_id or args.video.parent.name
+    match_id = _match_id(args)
     workdir = args.workdir or _DEFAULT_WORKDIR_ROOT / f"{match_id}_scoreboard_calibration"
     if args.labels is not None:
         report = run_labelling(args.video, workdir, args.labels)
@@ -100,8 +106,8 @@ def _calibrate(args: argparse.Namespace) -> int:
 def main(argv: Sequence[str] | None = None) -> int:
     """Run a command; returns the process exit code (0 ok, 2 on a handled error)."""
     args = build_parser().parse_args(argv)
-    configure_logging(args.log_level)
     try:
+        configure_logging(args.log_level)
         if args.command == "scoreboard":
             return _scoreboard(args)
         return _calibrate(args)

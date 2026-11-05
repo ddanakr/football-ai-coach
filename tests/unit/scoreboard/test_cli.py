@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import structlog
 
-from aicoach.cli import build_parser, main
+from aicoach.cli import _match_id, build_parser, main
 from tests.unit.scoreboard.conftest import write_calibration
 
 
@@ -102,3 +102,25 @@ def test_parser_match_id_defaults_to_none_so_the_directory_name_is_used() -> Non
     args = build_parser().parse_args(["scoreboard", "--video", "x/match01/src.mp4"])
     assert args.match_id is None
     assert args.sample_fps is None
+
+
+@pytest.mark.unit
+def test_main_unknown_log_level_exits_with_2(
+    match_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code = main(["--log-level", "FOO", "scoreboard", "--video", str(match_dir / "match.mp4")])
+    assert code == 2
+    assert "unknown log level" in capsys.readouterr().err
+
+
+@pytest.mark.unit
+def test_match_id_of_a_bare_file_name_is_the_name_of_the_current_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder = tmp_path / "match07"
+    folder.mkdir()
+    monkeypatch.chdir(folder)
+    args = build_parser().parse_args(["scoreboard", "--video", "src.mp4"])
+    assert _match_id(args) == "match07"
+    named = build_parser().parse_args(["scoreboard", "--video", "src.mp4", "--match-id", "x1"])
+    assert _match_id(named) == "x1"

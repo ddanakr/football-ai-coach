@@ -457,3 +457,23 @@ def test_run_scoreboard_unopenable_video_fails_before_any_pass(calibrated: Path)
         run_scoreboard(calibrated / "bad.mp4", "match01", source_factory=_factory([]))
     assert FakeSource.used == 0
     assert read_status(calibrated).stages["scoreboard"].state == "failed"
+
+
+@pytest.mark.unit
+def test_run_scoreboard_unwritable_status_does_not_stop_the_stage(
+    calibrated: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aicoach.errors import StorageError
+
+    def always_failing(*_args: object, **_kwargs: object) -> None:
+        msg = "file is open in another program"
+        raise StorageError(msg)
+
+    monkeypatch.setattr("aicoach.scoreboard.stage.write_status", always_failing)
+    with capture_logs() as logs:
+        result = run_scoreboard(
+            calibrated / "match.mp4", "match01", source_factory=_factory(match_frames())
+        )
+    assert result.stats.n_samples == 12
+    assert (calibrated / RESULT_FILE).is_file()
+    assert any(entry["event"] == "status_write_failed" for entry in logs)
