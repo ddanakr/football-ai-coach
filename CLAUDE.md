@@ -117,7 +117,7 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 
 **Отказоустойчивость:**
 
-- Иерархия исключений в `errors.py`: базовый `AicoachError`; наследники `IngestError`, `ScoreboardParseError`, `SpottingError`, `TranscriptionError`, `FusionError`, `StoreError`, `EvalError`, `AgentValidationError`, `ConfigError`, `ExternalServiceError`.
+- Иерархия исключений в `errors.py`: базовый `AicoachError`; наследники `IngestError`, `ScoreboardParseError`, `SpottingError`, `TranscriptionError`, `FusionError`, `StorageError`, `EvalError`, `AgentValidationError`, `ConfigError`, `ExternalServiceError`.
 - Запрещены голый `except:`, `except Exception: pass` и проглатывание ошибки без записи в лог. Исключение либо обрабатывается осмысленно, либо оборачивается в типизированное и поднимается выше с `raise ... from err`.
 - Вход проверяется на границах (CLI, файлы, ответы API и моделей) схемами `pydantic`. Внутри ядра данные считаются проверенными.
 - Внешние вызовы (LLM API, загрузка): таймаут обязателен, повтор с экспоненциальной задержкой на временные ошибки (429, 5xx, сеть), затем `ExternalServiceError`. Ответ языковой модели проверяется схемой и валидатором ссылок.

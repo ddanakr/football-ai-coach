@@ -7,3 +7,7 @@ class AicoachError(Exception):
 
 class EvalError(AicoachError):
     """Invalid input to the evaluation module (labels file, tolerance, parameters)."""
+
+
+class StorageError(AicoachError):
+    """The event store rejected an operation (invalid edit, unknown target, SQLite failure)."""
