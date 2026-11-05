@@ -11,3 +11,7 @@ class EvalError(AicoachError):
 
 class StorageError(AicoachError):
     """The event store rejected an operation (invalid edit, unknown target, SQLite failure)."""
+
+
+class ScoreboardParseError(AicoachError):
+    """The scoreboard stage cannot continue: no digit templates, a broken video, bad input."""
