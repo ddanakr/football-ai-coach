@@ -107,6 +107,7 @@ class ScoreboardResult(_Frozen):
 
     video: str
     decode_mode: DecodeMode
+    cache_key: str = ""
     sample_fps: float
     roi: Roi
     samples: list[Sample]

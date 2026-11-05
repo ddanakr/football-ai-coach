@@ -1,10 +1,12 @@
 """Windows and thresholds of the timeline logic.
 
 Debt: CLAUDE.md wants thresholds in `configs/*.yaml` read through `Settings`; until `Settings`
-exists they live in these pydantic models (see MEMORY.md, decision on scoreboard parameters).
+exists they live in these pydantic models.
 """
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from aicoach.scoreboard.imaging import ImageParams
 
 
 class _Frozen(BaseModel):
@@ -29,3 +31,16 @@ class TimelineParams(_Frozen):
     segment_gap_s: float = Field(default=2.0, ge=0)
     # How far the time mapping may extrapolate beyond the first and last reading of a segment.
     max_extrapolation_s: float = Field(default=30.0, ge=0)
+
+
+class ScoreboardConfig(_Frozen):
+    """Everything the stage needs besides the video path."""
+
+    # Seconds between two sampled frames is 1 / sample_fps.
+    sample_fps: float = Field(default=1.0, gt=0)
+    # Decode on the GPU if the machine has a decoder (falls back to the CPU by itself).
+    hw_accel: bool = True
+    timeline: TimelineParams = TimelineParams()
+    image: ImageParams = ImageParams()
+    # Warn if the metadata length and the number of decodable frames differ by more than this.
+    duration_tol_s: float = Field(default=1.0, ge=0)

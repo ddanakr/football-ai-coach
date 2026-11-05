@@ -41,7 +41,9 @@ pip install -e ".[features-tf]"
 
 ```bash
 python -m aicoach.cli ingest     --url "<YOUTUBE_URL>" --match-id <ID>
-python -m aicoach.cli scoreboard --match-id <ID>          # табло, плашки, повторы
+python -m aicoach.cli scoreboard --video <PATH_TO_SRC_MP4> [--force]   # часы и счёт табло → scoreboard.json рядом с видео
+python -m aicoach.cli scoreboard-calibrate --video <PATH_TO_SRC_MP4> --workdir scratch/<ID>_calibration   # шаг 1: эталон табло и листы кластеров цифр
+python -m aicoach.cli scoreboard-calibrate --video <PATH_TO_SRC_MP4> --workdir scratch/<ID>_calibration --labels labels.json   # шаг 2: образцы цифр
 python -m aicoach.cli features   --match-id <ID>          # в окружении .venv-tf для ветки A
 python -m aicoach.cli spot       --match-id <ID> --branch a   # или --branch b
 python -m aicoach.cli speech     --match-id <ID>          # VAD, Whisper, лексикон
@@ -50,7 +52,11 @@ python -m aicoach.cli eval       --match-id <ID> --split half2   # метрик�
 python -m aicoach.cli export-clip --match-id <ID> --event-id <EVENT_ID>
 ```
 
-Весь пайплайн подряд: `python -m aicoach.cli run --match-id <ID>`. Статус стадий пишется в `data/<match_id>/status.json`.
+Весь пайплайн подряд: `python -m aicoach.cli run --match-id <ID>`. Статус стадий пишется в `status.json` каталога матча (для стадии `scoreboard` это каталог видео).
+
+**Стадия `scoreboard` (D03).** Видео передаётся только аргументом `--video`; результат (`scoreboard.json`, `status.json`) и образцы (`scoreboard_templates/`) лежат в каталоге видео, а не в репозитории. Без образцов стадия падает с подсказкой. Калибровка в два шага: шаг 1 строит эталон табло и пишет в `--workdir` листы `sheet_clock.png`, `sheet_score.png`, `sheet_added.png` (кластеры символов с номерами); человек смотрит листы и пишет файл подписей `{"clock": {"0": "colon", "1": "0"}, "score": {...}, "added": {...}}` (номер кластера → `0`..`9`, `colon`, `plus`); шаг 2 (`--labels`) режет образцы. Декодирование идёт на видеокарте, если она есть (`--cpu` отключает, для AV1 это в десятки раз медленнее); образцы и прогон должны идти в одном режиме, иначе стадия остановится. Результат кэшируется по ключу (видео, параметры, режим, образцы); `--force` читает видео заново.
+
+Тест по реальному матчу пропускается, пока не задана переменная окружения: `$env:AICOACH_REAL_MATCH_VIDEO = "<PATH_TO_SRC_MP4>"; pytest tests/real_data --no-cov` (нужен готовый `scoreboard.json` рядом с видео).
 
 ## 4. Качество и тесты
 
