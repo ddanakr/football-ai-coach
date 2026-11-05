@@ -1,0 +1,46 @@
+.venv/
+.venv-tf/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.coverage
+.coverage.*
+htmlcov/
+.vscode/
+.claude/settings.local.json
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+mlruns/
+data/
+scratch/
+frames/
+clips/
+
+# notebooks are forbidden
+*.ipynb
+
+# video and audio
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.webm
+*.wav
+*.mp3
+*.m4a
+*.flac
+
+# arrays and model weights
+*.npy
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.safetensors
+*.bin
+
+# secrets
+.env
+.env.*
+!.env.example
