@@ -16,6 +16,7 @@ data/
 scratch/
 frames/
 clips/
+scoreboard_templates/
 
 # notebooks are forbidden
 *.ipynb
@@ -32,6 +33,7 @@ clips/
 *.flac
 
 # arrays and model weights
+*.npz
 *.npy
 *.pt
 *.pth
