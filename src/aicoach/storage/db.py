@@ -55,7 +55,7 @@ def _rollback(conn: sqlite3.Connection) -> None:
             conn.execute("ROLLBACK")
         except sqlite3.Error:
             # The connection is unusable anyway; the caller re-raises the original error.
-            logger.warning("rollback_failed", stage="storage", event="rollback_failed")
+            logger.warning("rollback_failed", stage="storage")
 
 
 @contextmanager

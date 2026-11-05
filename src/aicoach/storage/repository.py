@@ -116,14 +116,14 @@ def _require_live_event(conn: sqlite3.Connection, match_id: str, target: str) ->
         raise StorageError(msg)
 
 
-def add_edit(  # noqa: PLR0913  # one keyword per journal column; a wrapper object adds nothing
+def add_edit(
     conn: sqlite3.Connection,
     match_id: str,
     action: Literal["add", "move", "retype", "delete", "verify"],
     *,
     author: str,
     target: str | None = None,
-    type: EventType | None = None,  # noqa: A002  # column name of the journal
+    type: EventType | None = None,
     t_v: float | None = None,
 ) -> EditRecord:
     """Append one edit to the journal.

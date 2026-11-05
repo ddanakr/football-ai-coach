@@ -3,8 +3,10 @@
 import math
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 import pytest
+from structlog.testing import capture_logs
 
 from aicoach.domain.events import EventType
 from aicoach.errors import AicoachError, StorageError
@@ -915,6 +917,32 @@ def test_transaction_rolls_back_on_error_and_rejects_nesting(conn: sqlite3.Conne
 
     with transaction(conn), pytest.raises(StorageError, match="already open"), transaction(conn):
         pass
+
+
+class _RollbackFails(sqlite3.Connection):
+    """A connection whose ROLLBACK always fails, like a connection that died mid-transaction."""
+
+    # Any: mirrors the private `_Parameters` alias of the typeshed signature.
+    def execute(self, sql: str, parameters: Any = (), /) -> sqlite3.Cursor:
+        if sql == "ROLLBACK":
+            raise sqlite3.OperationalError("disk I/O error")  # noqa: EM101, TRY003
+        return super().execute(sql, parameters)
+
+
+@pytest.mark.unit
+def test_transaction_keeps_original_error_when_rollback_fails(db_path: Path) -> None:
+    conn = sqlite3.connect(db_path, isolation_level=None, factory=_RollbackFails)
+    try:
+        with (
+            capture_logs() as logs,
+            pytest.raises(RuntimeError, match="boom"),
+            transaction(conn),
+        ):
+            raise RuntimeError("boom")  # noqa: EM101, TRY003
+    finally:
+        conn.close()
+
+    assert [(entry["event"], entry["stage"]) for entry in logs] == [("rollback_failed", "storage")]
 
 
 # --- concurrency (WAL) -----------------------------------------------------------------
