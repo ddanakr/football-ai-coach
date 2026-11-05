@@ -46,7 +46,18 @@ class GroundTruthEvent(_Frozen):
 
 
 class GroundTruth(_Frozen):
-    """Ground-truth file: video name, half bounds and events."""
+    """Ground-truth file: video name, half bounds and events.
+
+    JSON layout read by `load_ground_truth`:
+
+    - `video` (str, required): name of the labeled video file.
+    - `halves` (optional): keys `"1"` and `"2"`, each `{"start": float|null, "end": float|null}`
+      in video seconds from the start of the whole file (D-018). Needed to place predictions
+      that have no `half` into a half.
+    - `events` (list, required), each with `type` (`goal|shot|corner|foul|subst`), `t_v`
+      (seconds, finite, >= 0) and `half` (1|2); optional `clock`, `team` (`home|away|null`),
+      `visibility` (default true), `replay` (default false), `annotator`, `note`.
+    """
 
     video: str
     halves: dict[Literal["1", "2"], HalfBounds] = Field(default_factory=dict)
@@ -56,7 +67,8 @@ class GroundTruth(_Frozen):
 class Prediction(_Frozen):
     """One system prediction. Predictions are immutable (CLAUDE.md section 5, item 3).
 
-    `half` is optional; predictions without it are dropped when evaluating a single half.
+    `half` is optional; when evaluating a single half, a prediction without it is placed
+    by the half bounds of the ground-truth file (see `evaluate`).
     `status` is free text with the default `"auto"`; only `"disallowed"` changes evaluation.
     """
 

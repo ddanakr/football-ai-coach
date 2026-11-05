@@ -4,15 +4,21 @@ The tolerance parameter `tolerance_s` is the half-width of the matching window, 
 SoccerNet's `delta` (full width); see `aicoach.eval.matching`.
 """
 
-from collections.abc import Sequence
+import math
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
 from aicoach.domain.events import EventType
 from aicoach.errors import EvalError
 from aicoach.eval.bootstrap import DEFAULT_N_BOOT, DEFAULT_SEED, bootstrap_ci
-from aicoach.eval.matching import MatchResult, filter_half, match_events
-from aicoach.eval.schemas import GroundTruthEvent, Prediction
+from aicoach.eval.matching import (
+    MatchResult,
+    filter_half,
+    filter_predictions_by_half,
+    match_events,
+)
+from aicoach.eval.schemas import GroundTruthEvent, HalfBounds, Prediction
 from aicoach.eval.stats import percentile
 
 # Tolerances from TZ section 5: +-5 s and +-10 s.
@@ -64,7 +70,8 @@ class EvaluationReport:
             EvalError: The tolerance was not evaluated.
         """
         for result in self.results:
-            if result.tolerance_s == tolerance_s:
+            # isclose, not ==: 0.1 + 0.2 and 0.3 are the same tolerance.
+            if math.isclose(result.tolerance_s, tolerance_s, rel_tol=1e-9, abs_tol=1e-9):
                 return result
         msg = f"tolerance {tolerance_s} was not evaluated"
         raise EvalError(msg)
@@ -125,6 +132,7 @@ def evaluate(
     *,
     tolerances_s: Sequence[float] = DEFAULT_TOLERANCES_S,
     half: Literal[1, 2] | None = None,
+    halves: Mapping[Literal["1", "2"], HalfBounds] | None = None,
     n_boot: int = DEFAULT_N_BOOT,
     seed: int = DEFAULT_SEED,
 ) -> EvaluationReport:
@@ -134,8 +142,10 @@ def evaluate(
         predictions: System predictions; disallowed goals are evaluated as shots.
         ground_truth: Ground-truth events.
         tolerances_s: Half-widths of the matching window in seconds (SoccerNet `delta / 2`).
-        half: If set, keep only events of that half before evaluating; predictions without
-            a half are dropped.
+        half: If set, keep only events of that half before evaluating. A prediction with
+            `half=None` is placed by `halves`; one outside the bounds is dropped.
+        halves: Half bounds of the ground-truth file (`GroundTruth.halves`); read only when
+            `half` is set and some prediction has no `half`.
         n_boot: Bootstrap resamples for the confidence intervals.
         seed: Bootstrap seed; the same inputs always give the same report.
 
@@ -143,13 +153,14 @@ def evaluate(
         Per-class and micro metrics for every tolerance.
 
     Raises:
-        EvalError: No tolerances given, an invalid tolerance, half or `n_boot`.
+        EvalError: No tolerances given, an invalid tolerance, half or `n_boot`; or predictions
+            without `half` must be placed but the bounds of the requested half are null.
     """
     if not tolerances_s:
         msg = "tolerances_s must contain at least one tolerance"
         raise EvalError(msg)
     if half is not None:
-        predictions = filter_half(predictions, half)
+        predictions = filter_predictions_by_half(predictions, half, halves)
         ground_truth = filter_half(ground_truth, half)
     results: list[ToleranceResult] = []
     for tolerance_s in tolerances_s:

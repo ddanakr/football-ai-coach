@@ -10,13 +10,13 @@ protocol defines `delta` as the full window width, so `tolerance_s = delta / 2`
 
 import math
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol, TypeVar
 
 from aicoach.domain.events import EventType
 from aicoach.errors import EvalError
-from aicoach.eval.schemas import GroundTruthEvent, Prediction
+from aicoach.eval.schemas import GroundTruthEvent, HalfBounds, Prediction
 
 # Absolute slack for float noise: 1239.56 - 1234.56 is 5.000000000000227, yet it is a
 # 5 s error. Far below the 0.01 s resolution of labels, so it never changes a real verdict.
@@ -85,6 +85,57 @@ def filter_half(items: Sequence[_T], half: Literal[1, 2]) -> list[_T]:
         msg = f"half must be 1 or 2, got {half!r}"
         raise EvalError(msg)
     return [item for item in items if item.half == half]
+
+
+def _half_window(
+    halves: Mapping[Literal["1", "2"], HalfBounds] | None, half: int
+) -> tuple[float, float] | None:
+    """Return `(start, end)` of the half, or `None` if the bounds are absent or incomplete."""
+    key: Literal["1", "2"] = "1" if half == 1 else "2"
+    bounds = (halves or {}).get(key)
+    if bounds is None or bounds.start is None or bounds.end is None:
+        return None
+    return bounds.start, bounds.end
+
+
+def filter_predictions_by_half(
+    predictions: Sequence[Prediction],
+    half: Literal[1, 2],
+    halves: Mapping[Literal["1", "2"], HalfBounds] | None,
+) -> list[Prediction]:
+    """Keep the predictions that belong to `half`, preserving their order.
+
+    A prediction with an explicit `half` is kept when it equals `half`. A prediction with
+    `half=None` is placed by the bounds: kept when `start <= t_v <= end` (both ends included)
+    and dropped when it lies outside them, for example in the break or the studio.
+
+    Args:
+        predictions: Predictions in any order.
+        half: Requested half.
+        halves: Half bounds from the ground-truth file, keyed `"1"` and `"2"`. Only the
+            bounds of the requested half are read, and only if some prediction needs them.
+
+    Raises:
+        EvalError: `half` is not 1 or 2, or a prediction has no `half` while the bounds of
+            the requested half are missing or incomplete.
+    """
+    filter_half([], half)  # validates `half`
+    window = _half_window(halves, half)
+    if window is None and any(p.half is None for p in predictions):
+        msg = (
+            f"cannot place predictions without `half` into half {half}: the ground-truth "
+            f"file has no start/end for half {half}"
+        )
+        raise EvalError(msg)
+    kept: list[Prediction] = []
+    for pred in predictions:
+        if pred.half is not None:
+            inside = pred.half == half
+        else:
+            inside = window is not None and window[0] <= pred.t_v <= window[1]
+        if inside:
+            kept.append(pred)
+    return kept
 
 
 def match_events(

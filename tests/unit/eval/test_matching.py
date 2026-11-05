@@ -10,6 +10,7 @@ from aicoach.errors import EvalError
 from aicoach.eval.matching import (
     MatchResult,
     filter_half,
+    filter_predictions_by_half,
     match_events,
     normalize_predictions,
 )
@@ -225,3 +226,14 @@ def test_filter_half_keeps_only_requested_half() -> None:
 def test_filter_half_unknown_half_raises_eval_error() -> None:
     with pytest.raises(EvalError, match="half"):
         filter_half([make_gt("shot", 1.0)], 3)  # type: ignore[arg-type]  # deliberately invalid
+
+
+@pytest.mark.unit
+def test_filter_predictions_by_half_invalid_half_raises_eval_error() -> None:
+    with pytest.raises(EvalError, match="half"):
+        filter_predictions_by_half([], 3, {})  # type: ignore[arg-type]  # deliberately invalid
+
+
+@pytest.mark.unit
+def test_filter_predictions_by_half_empty_input_needs_no_bounds() -> None:
+    assert filter_predictions_by_half([], 1, None) == []

@@ -30,7 +30,8 @@ pip install -e ".[features-tf]"
 | `ruff check .` и `ruff format --check .` | линтер и проверка формата |
 | `ruff format .` и `ruff check --fix .` | автоформатирование и автоисправления |
 | `mypy` | типы (`files = ["src", "tests"]` из `pyproject.toml`) |
-| `pytest` | тесты с отчётом о покрытии (порог пока не задан) |
+| `pytest` | тесты с отчётом о покрытии (порог `fail_under = 80`) |
+| `pytest <путь> --no-cov` | подмножество тестов: без `--no-cov` покрытие считается по неполному запуску и `fail_under` роняет его, хотя тесты зелёные |
 | `pytest -m integration` | интеграционные тесты (нужен `ffmpeg`, сети нет); маркеры появятся вместе с тестами |
 | `mlflow ui --backend-store-uri file:./mlruns` | просмотр экспериментов |
 

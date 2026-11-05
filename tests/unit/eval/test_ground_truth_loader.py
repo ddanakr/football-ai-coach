@@ -12,6 +12,8 @@ from aicoach.domain.events import EventType
 from aicoach.errors import AicoachError, EvalError
 from aicoach.eval.schemas import GroundTruth, Prediction, load_ground_truth
 
+# Any: a raw JSON payload with mixed value types (str, float, None, list, nested dict); the
+# tests mutate and re-serialize it, so a narrower type would only add casts.
 VALID: dict[str, Any] = {
     "video": "synthetic.mp4",
     "halves": {"1": {"start": 12.0, "end": 2800.5}, "2": {"start": None, "end": None}},

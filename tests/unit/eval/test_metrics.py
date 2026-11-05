@@ -1,10 +1,13 @@
 """Per-class and micro metrics, timing error, half filter."""
 
+from typing import Literal
+
 import pytest
 
 from aicoach.domain.events import EventType
 from aicoach.errors import EvalError
 from aicoach.eval.metrics import DEFAULT_TOLERANCES_S, evaluate
+from aicoach.eval.schemas import GroundTruth, HalfBounds
 from tests.fixtures.factories import make_gt, make_pred
 
 ALL_TYPES = list(EventType)
@@ -203,7 +206,7 @@ def test_evaluate_half_filter_keeps_only_requested_half() -> None:
         make_pred("shot", 101.0, half=1),
         make_pred("shot", 3001.0, half=2),
         make_pred("shot", 3500.0, half=2),
-        make_pred("shot", 5000.0),  # unknown half is dropped when filtering
+        make_pred("shot", 5000.0, half=1),  # explicit half 1 is dropped when half=2 is asked
     ]
 
     both = evaluate(preds, gts).result_for(5.0).micro
@@ -242,3 +245,121 @@ def test_evaluate_empty_tolerances_raise_eval_error() -> None:
 def test_report_result_for_unknown_tolerance_raises_eval_error() -> None:
     with pytest.raises(EvalError, match="tolerance"):
         evaluate([], []).result_for(7.0)
+
+
+HALVES: dict[Literal["1", "2"], HalfBounds] = {
+    "1": HalfBounds(start=10.0, end=2800.0),
+    "2": HalfBounds(start=3000.0, end=5800.0),
+}
+
+
+@pytest.mark.unit
+def test_evaluate_half_filter_places_unlabeled_prediction_by_bounds() -> None:
+    gts = [make_gt("shot", 3100.0, half=2)]
+    preds = [make_pred("shot", 3101.0)]  # half=None, inside half 2
+
+    micro = evaluate(preds, gts, half=2, halves=HALVES).result_for(5.0).micro
+
+    assert (micro.tp, micro.fp, micro.fn) == (1, 0, 0)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("t_v", [10.0, 2800.0, 3000.0, 5800.0])
+def test_evaluate_half_filter_bounds_are_inclusive(t_v: float) -> None:
+    half: Literal[1, 2] = 1 if t_v < 2900.0 else 2
+    other: Literal[1, 2] = 2 if half == 1 else 1
+
+    mine = evaluate([make_pred("shot", t_v)], [], half=half, halves=HALVES)
+    theirs = evaluate([make_pred("shot", t_v)], [], half=other, halves=HALVES)
+
+    assert mine.result_for(5.0).micro.fp == 1
+    assert theirs.result_for(5.0).micro.fp == 0
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("t_v", [0.0, 9.99, 2800.01, 2999.99, 5800.01, 9000.0])
+def test_evaluate_half_filter_drops_unlabeled_prediction_outside_both_halves(t_v: float) -> None:
+    for half in (1, 2):
+        micro = (
+            evaluate([make_pred("shot", t_v)], [], half=half, halves=HALVES).result_for(5.0).micro
+        )
+
+        assert micro.fp == 0
+
+
+@pytest.mark.unit
+def test_evaluate_half_filter_explicit_half_wins_over_bounds() -> None:
+    # t_v lies inside half 2 by the bounds, but the prediction says half 1: trust the field.
+    micro = (
+        evaluate([make_pred("shot", 3100.0, half=1)], [], half=1, halves=HALVES)
+        .result_for(5.0)
+        .micro
+    )
+
+    assert micro.fp == 1
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "halves",
+    [
+        None,
+        {},
+        {"1": HalfBounds(start=10.0, end=2800.0)},
+        {"2": HalfBounds(start=None, end=None)},
+        {"2": HalfBounds(start=3000.0, end=None)},
+    ],
+)
+def test_evaluate_half_filter_null_bounds_for_requested_half_raises(
+    halves: dict[Literal["1", "2"], HalfBounds] | None,
+) -> None:
+    with pytest.raises(EvalError, match="half 2"):
+        evaluate([make_pred("shot", 3100.0)], [], half=2, halves=halves)
+
+
+@pytest.mark.unit
+def test_evaluate_half_filter_null_bounds_are_fine_when_all_predictions_have_half() -> None:
+    micro = (
+        evaluate([make_pred("shot", 3100.0, half=2)], [], half=2, halves=None).result_for(5.0).micro
+    )
+
+    assert micro.fp == 1
+
+
+@pytest.mark.unit
+def test_evaluate_half_filter_only_requested_half_bounds_are_needed() -> None:
+    halves: dict[Literal["1", "2"], HalfBounds] = {
+        "2": HalfBounds(start=3000.0, end=5800.0)  # half 1 is not marked
+    }
+
+    micro = evaluate([make_pred("shot", 3100.0)], [], half=2, halves=halves).result_for(5.0).micro
+
+    assert micro.fp == 1
+
+
+@pytest.mark.unit
+def test_result_for_matches_tolerance_up_to_float_noise() -> None:
+    report = evaluate([], [], tolerances_s=(0.3,))
+
+    assert report.result_for(0.1 + 0.2).tolerance_s == 0.3
+    with pytest.raises(EvalError, match="not evaluated"):
+        report.result_for(0.31)
+
+
+@pytest.mark.unit
+def test_evaluate_accepts_halves_straight_from_ground_truth() -> None:
+    gt = GroundTruth.model_validate(
+        {
+            "video": "v.mp4",
+            "halves": {"2": {"start": 3000.0, "end": 5800.0}},
+            "events": [{"type": "shot", "t_v": 3100.0, "half": 2}],
+        }
+    )
+
+    micro = (
+        evaluate([make_pred("shot", 3101.0)], gt.events, half=2, halves=gt.halves)
+        .result_for(5.0)
+        .micro
+    )
+
+    assert (micro.tp, micro.fp, micro.fn) == (1, 0, 0)
