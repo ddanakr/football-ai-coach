@@ -32,6 +32,12 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
+      - id: forbid-ai-attribution
+        name: forbid AI attribution in commit messages
+        description: GIT.md section 7. Rejects Co-Authored-By, "Generated with" and the Anthropic noreply address.
+        entry: (?i)co-authored-by|generated with|noreply@anthropic\.com
+        language: pygrep
+        stages: [commit-msg]
       - id: forbid-notebooks
         name: forbid Jupyter notebooks
         entry: Jupyter notebooks are forbidden (CLAUDE.md section 7); use scratch/*.py
