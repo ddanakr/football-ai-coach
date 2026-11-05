@@ -15,3 +15,7 @@ class StorageError(AicoachError):
 
 class ScoreboardParseError(AicoachError):
     """The scoreboard stage cannot continue: no digit templates, a broken video, bad input."""
+
+
+class ConfigError(AicoachError):
+    """Invalid configuration: a bad value in a setting, an unknown log level."""
