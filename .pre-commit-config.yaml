@@ -38,6 +38,13 @@ repos:
         entry: (?i)co-authored-by|generated with|noreply@anthropic\.com
         language: pygrep
         stages: [commit-msg]
+      - id: commit-subject-length
+        name: commit subject at most 72 characters
+        description: GIT.md section 2. Matches a first line of 73 or more bytes (subjects are ASCII, CRLF is not counted) (multiline mode makes \A the start of the message file).
+        entry: '\A[^\r\n]{73}'
+        language: pygrep
+        args: [--multiline]
+        stages: [commit-msg]
       - id: forbid-notebooks
         name: forbid Jupyter notebooks
         entry: Jupyter notebooks are forbidden (CLAUDE.md section 7); use scratch/*.py
