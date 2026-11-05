@@ -35,7 +35,7 @@ Refs: FR-6
 ```
 
 - **Типы:** `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `chore`, `build`, `ci`.
-- **Scope** это имя модуля: `ingest`, `scoreboard`, `spotting`, `speech`, `fusion`, `storage`, `agent`, `eval`, `export`, `ui`, `config`, `deps`, `memory`.
+- **Scope** это имя модуля: `ingest`, `scoreboard`, `spotting`, `speech`, `fusion`, `storage`, `agent`, `eval`, `export`, `ui`, `config`, `deps`, `memory`, `spec` (ТЗ, `docs/TZ.md`).
 - **Subject:** английский, повелительное наклонение, до 72 символов, без точки в конце.
 - **Body** обязателен, если изменение не очевидно из заголовка (причина, компромисс, ссылка на `D-xxx` из `MEMORY.md`).
 - **Breaking change:** `!` после scope и пояснение в body (например, меняется схема базы).
