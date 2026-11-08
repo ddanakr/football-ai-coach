@@ -92,6 +92,7 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 │   ├── export/         # план: клипы FFmpeg
 │   └── ui/             # план
 ├── tests/              # структура в TESTING.md
+├── data_labels/        # эталон разметки: JSON-файлы формата GroundTruth (D-040), в git
 ├── data/  mlruns/  scratch/   # в .gitignore
 ```
 
