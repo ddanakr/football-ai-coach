@@ -26,7 +26,6 @@ from tests.fixtures.plates_synth import (
     background,
     blue_object_frame,
     box,
-    draw_plate,
     plate_frame,
     triangle,
 )
@@ -215,10 +214,3 @@ def test_signature_same_plate_is_near_and_another_text_is_far() -> None:
     assert other is not None
     assert signature_distance(first, again) < 0.02
     assert signature_distance(first, other) > 0.02
-
-
-@pytest.mark.unit
-def test_draw_plate_returns_the_same_frame() -> None:
-    frame = background()
-
-    assert draw_plate(frame, "goal") is frame

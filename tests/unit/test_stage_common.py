@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 
 import pytest
+from structlog.testing import capture_logs
 
 from aicoach.errors import StorageError
 from aicoach.logging_setup import stage_logger
@@ -70,7 +71,10 @@ def test_progress_writes_status_only_after_a_noticeable_step(tmp_path: Path) -> 
 def test_set_status_failing_write_is_logged_and_not_raised(tmp_path: Path) -> None:
     log = stage_logger("demo", "m")
 
-    set_status(tmp_path / "no_such_dir", "demo", "running", 0.1, log)
+    with capture_logs() as logs:
+        set_status(tmp_path / "no_such_dir", "demo", "running", 0.1, log)
+
+    assert [entry["event"] for entry in logs] == ["status_write_failed"]
 
 
 @pytest.mark.unit

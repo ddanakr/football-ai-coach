@@ -191,6 +191,9 @@ def read_frame(frame: Frame, layout: PlateLayout, params: DetectParams) -> Frame
     A frame is a candidate if the ring of the logo block is blue enough. A candidate without a
     light panel is rejected as `no_panel`, one without a type marker as `no_marker`. The
     confidence of a plate is the smallest of the scaled block, panel and marker shares.
+
+    Raises:
+        ScoreboardParseError: the frame has no pixels.
     """
     block = crop_fraction(frame, layout.block)
     anchor = ring_blue_share(block, layout.ring_inset)

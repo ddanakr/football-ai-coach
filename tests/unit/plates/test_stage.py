@@ -292,7 +292,8 @@ def test_run_plates_decoder_crash_keeps_the_previous_result(ready: Path) -> None
 
     assert (ready / RESULT_FILE).read_bytes() == before
     status = read_status(ready).stages["plates"]
-    assert (status.state, "decoder crashed" in (status.error or "")) == ("failed", True)
+    assert status.state == "failed"
+    assert "decoder crashed" in (status.error or "")
 
 
 @pytest.mark.unit
