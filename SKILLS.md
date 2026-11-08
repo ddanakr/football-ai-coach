@@ -44,6 +44,7 @@ python -m aicoach.cli ingest     --url "<YOUTUBE_URL>" --match-id <ID>
 python -m aicoach.cli scoreboard --video <PATH_TO_SRC_MP4> [--force]   # часы и счёт табло → scoreboard.json рядом с видео
 python -m aicoach.cli scoreboard-calibrate --video <PATH_TO_SRC_MP4> --workdir scratch/<ID>_calibration   # шаг 1: эталон табло и листы кластеров цифр
 python -m aicoach.cli scoreboard-calibrate --video <PATH_TO_SRC_MP4> --workdir scratch/<ID>_calibration --labels labels.json   # шаг 2: образцы цифр
+python -m aicoach.cli plates     --video <PATH_TO_SRC_MP4> [--force]   # плашки замен, голов, карточек → plates.json и plate_crops/ рядом с видео (нужен scoreboard.json)
 python -m aicoach.cli features   --match-id <ID>          # в окружении .venv-tf для ветки A
 python -m aicoach.cli spot       --match-id <ID> --branch a   # или --branch b
 python -m aicoach.cli speech     --match-id <ID>          # VAD, Whisper, лексикон
@@ -56,7 +57,9 @@ python -m aicoach.cli export-clip --match-id <ID> --event-id <EVENT_ID>
 
 **Стадия `scoreboard` (D03).** Видео передаётся только аргументом `--video`; результат (`scoreboard.json`, `status.json`) и образцы (`scoreboard_templates/`) лежат в каталоге видео, а не в репозитории. Без образцов стадия падает с подсказкой. Калибровка в два шага: шаг 1 строит эталон табло и пишет в `--workdir` листы `sheet_clock.png`, `sheet_score.png`, `sheet_added.png` (кластеры символов с номерами); человек смотрит листы и пишет файл подписей `{"clock": {"0": "colon", "1": "0"}, "score": {...}, "added": {...}}` (номер кластера → `0`..`9`, `colon`, `plus`); шаг 2 (`--labels`) режет образцы. Декодирование идёт на видеокарте, если она есть (`--cpu` отключает, для AV1 это в десятки раз медленнее); образцы и прогон должны идти в одном режиме, иначе стадия остановится. Результат кэшируется по ключу (видео, параметры, режим, образцы); `--force` читает видео заново.
 
-Тест по реальному матчу пропускается, пока не задана переменная окружения: `$env:AICOACH_REAL_MATCH_VIDEO = "<PATH_TO_SRC_MP4>"; pytest tests/real_data --no-cov` (нужен готовый `scoreboard.json` рядом с видео).
+**Стадия `plates` (D04, шаг 1).** Нужен `scoreboard.json` рядом с видео (без него понятная ошибка с подсказкой запустить табло) и тот же режим декодирования, что у табло (иначе остановка). Читает видео 2 раза в секунду (`--sample-fps`; `--cpu` декодирует на процессоре, `--match-id` по умолчанию имя каталога видео), находит плашки замены, гола и карточки по цвету и форме, склеивает кадры в плашки, определяет команду по логотипу и смене счёта. Фамилии не читаются (это следующий шаг). Пишет `plates.json`, `status.json` и `plate_crops/` (вырезка и логотип каждой плашки, вырезки отброшенных кандидатов) в каталог видео; всё вне git. Кэш по ключу (видео, версия `scoreboard.json`, режим декодирования, параметры и раскладка); `--force` читает видео заново. На матче `match01` стадия идёт около 9 минут на видеокарте.
+
+Тест по реальному матчу пропускается, пока не задана переменная окружения: `$env:AICOACH_REAL_MATCH_VIDEO = "<PATH_TO_SRC_MP4>"; pytest tests/real_data --no-cov` (нужны готовый `scoreboard.json` и, для плашек, `plates.json` и `plates_reference.json` с контрольными временами владельца рядом с видео).
 
 ## 4. Качество и тесты
 
