@@ -17,7 +17,7 @@ from typing import Protocol
 import structlog
 from pydantic import TypeAdapter, ValidationError
 
-from aicoach.errors import ConfigError, ScoreboardParseError, StorageError
+from aicoach.errors import ConfigError, ScoreboardParseError
 from aicoach.logging_setup import stage_logger
 from aicoach.scoreboard.assemble import RawReading, assemble_result
 from aicoach.scoreboard.board import load_reference
@@ -43,14 +43,13 @@ from aicoach.scoreboard.video import (
     probe_video,
     sample_count,
 )
-from aicoach.status import State, write_status
+from aicoach.stage_common import Progress, elapsed_ms, record_failure, set_status, write_atomic
 
 Logger = structlog.typing.FilteringBoundLogger
 STAGE = "scoreboard"
 RESULT_FILE = "scoreboard.json"
 TEMPLATES_DIR = "scoreboard_templates"
 DEFAULT_CALIBRATION_STEP_S = 5.0
-_PROGRESS_STEP = 0.02  # write status.json after this much progress
 _LABELS = TypeAdapter(dict[str, dict[str, str]])
 
 
@@ -121,45 +120,6 @@ def _load_cached(path: Path, key: str, log: Logger) -> ScoreboardResult | None:
     return result if result.cache_key == key else None
 
 
-def _write_atomic(path: Path, text: str) -> None:
-    """Write to a temporary file and rename it, so a failure keeps the old file intact."""
-    tmp = path.with_name(path.name + ".tmp")
-    try:
-        tmp.write_text(text, encoding="utf-8")
-        tmp.replace(path)
-    except OSError as err:
-        tmp.unlink(missing_ok=True)
-        msg = f"cannot write {path}"
-        raise StorageError(msg) from err
-
-
-@dataclass
-class Progress:
-    """Writes status.json when progress moved enough; remembers the last value for errors."""
-
-    match_dir: Path
-    log: Logger
-    last_written: float = 0.0
-    value: float = 0.0
-
-    def update(self, value: float) -> None:
-        self.value = value
-        if value - self.last_written >= _PROGRESS_STEP:
-            _set_status(self.match_dir, "running", value, self.log)
-            self.last_written = value
-
-
-def _set_status(
-    match_dir: Path, state: State, progress: float, log: Logger, error: str | None = None
-) -> None:
-    """Write status.json; a failure (for example the UI holds the file open) is logged and
-    never stops the stage, because the status is only a progress report."""
-    try:
-        write_status(match_dir, STAGE, state, progress, error=error)
-    except StorageError:
-        log.warning("status_write_failed", state=state)
-
-
 def read_samples(
     source: FrameSource,
     info: VideoInfo,
@@ -212,31 +172,17 @@ def run_scoreboard(
     config = config or ScoreboardConfig()
     log = stage_logger(STAGE, match_id)
     match_dir = video.parent
-    progress = Progress(match_dir, log)
+    progress = Progress(match_dir, STAGE, log)
     started = time.perf_counter()
     try:
         result, from_cache = _run(video, match_dir, config, force, source_factory, progress, log)
     except BaseException as err:  # any failure, even Ctrl+C, must not leave "running" behind
-        _record_failure(match_dir, progress.value, err, log, started)
+        record_failure(match_dir, STAGE, progress.value, err, log, started)
         raise
-    _set_status(match_dir, "done", 1.0, log)
+    set_status(match_dir, STAGE, "done", 1.0, log)
     event = "stage_skipped" if from_cache else "stage_done"
-    log.info(event, n_samples=result.stats.n_samples, duration_ms=_ms(started))
+    log.info(event, n_samples=result.stats.n_samples, duration_ms=elapsed_ms(started))
     return result
-
-
-def _ms(started: float) -> int:
-    return round((time.perf_counter() - started) * 1000)
-
-
-def _record_failure(
-    match_dir: Path, progress: float, err: BaseException, log: Logger, started: float
-) -> None:
-    """Log the failure and mark the stage as failed; a failing status write must not hide the
-    original error. The previous `scoreboard.json` is never touched here."""
-    reason = str(err) or type(err).__name__
-    log.exception("stage_failed", reason=reason, duration_ms=_ms(started))
-    _set_status(match_dir, "failed", progress, log, error=reason)
 
 
 def _run(
@@ -258,7 +204,7 @@ def _run(
         cached = _load_cached(out_path, key, log)
         if cached is not None:
             return cached, True
-    _set_status(match_dir, "running", 0.0, log)
+    set_status(match_dir, STAGE, "running", 0.0, log)
     step = frame_step(info.fps, config.sample_fps)
     source = source_factory(video, step, config.hw_accel)
     t_v, readings = read_samples(source, info, step, ctx, mode, progress)
@@ -276,7 +222,7 @@ def _run(
         info.duration_s,
         warning,
     ).model_copy(update={"cache_key": key})
-    _write_atomic(out_path, result.model_dump_json())
+    write_atomic(out_path, result.model_dump_json())
     return result, False
 
 
@@ -321,7 +267,7 @@ def run_calibration(
         n_frames=sample.n_frames,
         n_board_frames=sample.n_board_frames,
         decode_mode=source.decode_mode,
-        duration_ms=_ms(started),
+        duration_ms=elapsed_ms(started),
     )
     return CalibrationSummary(
         n_frames=sample.n_frames,
