@@ -44,7 +44,7 @@ python -m aicoach.cli ingest     --url "<YOUTUBE_URL>" --match-id <ID>
 python -m aicoach.cli scoreboard --video <PATH_TO_SRC_MP4> [--force]   # часы и счёт табло → scoreboard.json рядом с видео
 python -m aicoach.cli scoreboard-calibrate --video <PATH_TO_SRC_MP4> --workdir scratch/<ID>_calibration   # шаг 1: эталон табло и листы кластеров цифр
 python -m aicoach.cli scoreboard-calibrate --video <PATH_TO_SRC_MP4> --workdir scratch/<ID>_calibration --labels labels.json   # шаг 2: образцы цифр
-python -m aicoach.cli plates     --video <PATH_TO_SRC_MP4> [--force]   # плашки замен, голов, карточек → plates.json и plate_crops/ рядом с видео (нужен scoreboard.json)
+python -m aicoach.cli plates     --video <PATH_TO_SRC_MP4> [--match-id <ID>] [--sample-fps 2] [--cpu] [--force]   # плашки замен, голов, карточек → plates.json и plate_crops/ рядом с видео (нужен scoreboard.json)
 python -m aicoach.cli features   --match-id <ID>          # в окружении .venv-tf для ветки A
 python -m aicoach.cli spot       --match-id <ID> --branch a   # или --branch b
 python -m aicoach.cli speech     --match-id <ID>          # VAD, Whisper, лексикон
