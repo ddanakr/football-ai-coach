@@ -62,7 +62,7 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 ├── README.md  pyproject.toml  .env.example (план)
 ├── scripts/            # check.py: полный контроль качества
 ├── configs/            # план: пороги, окна NMS, лексиконы, шаблоны плашек (yaml); пока пороги лежат в pydantic-моделях стадий (D-031)
-├── docs/               # TZ.md; протокол разметки (план)
+├── docs/               # TZ.md; протокол разметки
 ├── src/aicoach/
 │   ├── cli.py          # точка входа: python -m aicoach.cli <команда>; команды: scoreboard, scoreboard-calibrate, plates
 │   ├── status.py       # status.json каталога матча: состояние стадий (running, done, failed) и прогресс
