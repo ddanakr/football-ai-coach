@@ -39,7 +39,7 @@ repos:
         language: pygrep
         stages: [commit-msg]
       - id: commit-subject-length
-        name: commit subject at most 72 characters
+        name: commit subject at most 72 bytes
         description: GIT.md section 2. Matches a first line of 73 or more bytes (subjects are ASCII, CRLF is not counted) (multiline mode makes \A the start of the message file).
         entry: '\A[^\r\n]{73}'
         language: pygrep
