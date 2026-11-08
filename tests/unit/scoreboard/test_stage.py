@@ -359,7 +359,7 @@ def test_run_scoreboard_failed_status_write_does_not_hide_the_real_error(
             raise StorageError(msg)
         write_status(match_dir, name, state, progress, error)
 
-    monkeypatch.setattr("aicoach.scoreboard.stage.write_status", write_unless_failed)
+    monkeypatch.setattr("aicoach.stage_common.write_status", write_unless_failed)
     with capture_logs() as logs, pytest.raises(RuntimeError, match="decoder crashed"):
         run_scoreboard(calibrated / "match.mp4", "match01", source_factory=_broken_factory())
     assert any(entry["event"] == "status_write_failed" for entry in logs)
@@ -469,7 +469,7 @@ def test_run_scoreboard_unwritable_status_does_not_stop_the_stage(
         msg = "file is open in another program"
         raise StorageError(msg)
 
-    monkeypatch.setattr("aicoach.scoreboard.stage.write_status", always_failing)
+    monkeypatch.setattr("aicoach.stage_common.write_status", always_failing)
     with capture_logs() as logs:
         result = run_scoreboard(
             calibrated / "match.mp4", "match01", source_factory=_factory(match_frames())

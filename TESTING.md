@@ -175,7 +175,9 @@ tests/
 │   └── labels/                  # синтетическая разметка
 ├── unit/
 │   ├── domain/       test_time_mapping.py   test_events.py
+│   ├── test_stage_common.py                 # общие помощники стадий: атомарная запись, статус, прогресс
 │   ├── scoreboard/   test_clock_parser.py   test_score_history.py   test_plate_parser.py
+│   ├── plates/       test_detect.py   test_tracks.py   test_logos.py   test_teams.py   test_assemble.py   test_stage.py   test_cli.py
 │   ├── spotting/     test_nms.py            test_peaks.py
 │   ├── speech/       test_lexicon.py        test_language_routing.py   test_name_normalization.py
 │   ├── fusion/       test_rules.py          test_replay_suppression.py
@@ -194,7 +196,8 @@ tests/
 │   ├── test_labels_format.py                # формат эталона, допустимые категории, t_v в пределах видео
 │   └── test_config_files.py                 # configs/*.yaml валидны, пороги в допустимых диапазонах
 └── real_data/                               # @real_data: пропускается без AICOACH_REAL_MATCH_VIDEO
-    └── test_scoreboard_known_pairs.py       # scoreboard.json реального матча против двух пар владельца
+    ├── test_scoreboard_known_pairs.py       # scoreboard.json реального матча против двух пар владельца
+    └── test_plates_reference.py             # plates.json против контрольных времён владельца (plates_reference.json рядом с видео)
 ```
 
 ## 6. Чек-лист перед завершением задачи

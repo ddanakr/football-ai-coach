@@ -19,3 +19,7 @@ class ScoreboardParseError(AicoachError):
 
 class ConfigError(AicoachError):
     """Invalid configuration: a bad value in a setting, an unknown log level."""
+
+
+class PlatesError(AicoachError):
+    """The plates stage cannot continue: no scoreboard.json, mismatched decode mode, bad input."""

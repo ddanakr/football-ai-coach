@@ -8,11 +8,14 @@ import argparse
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from typing import TypeVar
 
 from pydantic import ValidationError
 
 from aicoach.errors import AicoachError, ConfigError
 from aicoach.logging_setup import configure_logging
+from aicoach.plates.config import PlatesConfig
+from aicoach.plates.stage import run_plates
 from aicoach.scoreboard.config import ScoreboardConfig
 from aicoach.scoreboard.stage import (
     DEFAULT_CALIBRATION_STEP_S,
@@ -22,6 +25,7 @@ from aicoach.scoreboard.stage import (
 )
 
 _DEFAULT_WORKDIR_ROOT = Path("scratch")
+_Config = TypeVar("_Config", ScoreboardConfig, PlatesConfig)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -36,6 +40,15 @@ def build_parser() -> argparse.ArgumentParser:
     board.add_argument("--force", action="store_true", help="ignore an up-to-date result")
     board.add_argument("--sample-fps", type=float, help="frames per second to read (default 1)")
     board.add_argument("--cpu", action="store_true", help="decode on the CPU (very slow for AV1)")
+
+    plates = commands.add_parser(
+        "plates", help="find substitution, goal and card plates (needs scoreboard.json)"
+    )
+    plates.add_argument("--video", type=Path, required=True, help="path of the match video")
+    plates.add_argument("--match-id", help="default: name of the video's directory")
+    plates.add_argument("--force", action="store_true", help="ignore an up-to-date result")
+    plates.add_argument("--sample-fps", type=float, help="frames per second to read (default 2)")
+    plates.add_argument("--cpu", action="store_true", help="decode on the CPU (very slow for AV1)")
 
     calib = commands.add_parser(
         "scoreboard-calibrate", help="cut digit templates from the broadcast (two steps)"
@@ -55,13 +68,13 @@ def _match_id(args: argparse.Namespace) -> str:
     return given or args.video.resolve().parent.name
 
 
-def _config(hw_accel: bool, sample_fps: float | None = None) -> ScoreboardConfig:
-    """Build the stage config; an invalid value is a configuration error, not a traceback."""
+def _config(model: type[_Config], hw_accel: bool, sample_fps: float | None = None) -> _Config:
+    """Build a stage config; an invalid value is a configuration error, not a traceback."""
     values: dict[str, object] = {"hw_accel": hw_accel}
     if sample_fps is not None:
         values["sample_fps"] = sample_fps
     try:
-        return ScoreboardConfig.model_validate(values)
+        return model.model_validate(values)
     except ValidationError as err:
         first = err.errors()[0]
         msg = f"invalid option {first['loc'][0]}: {first['msg']}"
@@ -69,7 +82,7 @@ def _config(hw_accel: bool, sample_fps: float | None = None) -> ScoreboardConfig
 
 
 def _scoreboard(args: argparse.Namespace) -> int:
-    config = _config(hw_accel=not args.cpu, sample_fps=args.sample_fps)
+    config = _config(ScoreboardConfig, not args.cpu, args.sample_fps)
     match_id = _match_id(args)
     result = run_scoreboard(args.video, match_id, config, force=args.force)
     stats = result.stats
@@ -77,6 +90,18 @@ def _scoreboard(args: argparse.Namespace) -> int:
         f"scoreboard.json: {stats.n_samples} samples, {stats.n_visible} with the board, "
         f"{stats.n_unreadable} unreadable, {stats.n_jumps} offset jumps, "
         f"{len(result.score_changes)} score changes, decode mode {result.decode_mode}\n"
+    )
+    return 0
+
+
+def _plates(args: argparse.Namespace) -> int:
+    config = _config(PlatesConfig, not args.cpu, args.sample_fps)
+    result = run_plates(args.video, _match_id(args), config, force=args.force)
+    counts = ", ".join(f"{kind} {n}" for kind, n in result.stats.n_by_type.items())
+    sys.stdout.write(
+        f"plates.json: {len(result.plates)} plates ({counts}), {result.stats.n_rejected} "
+        f"rejected candidates, {len(result.logo_clusters)} logo clusters, "
+        f"{result.stats.n_low_conf} low-confidence, decode mode {result.decode_mode}\n"
     )
     return 0
 
@@ -91,7 +116,7 @@ def _calibrate(args: argparse.Namespace) -> int:
             if labels:
                 sys.stdout.write(f"  {kind}: no template for {', '.join(labels)}\n")
         return 0
-    config = _config(hw_accel=not args.cpu)
+    config = _config(ScoreboardConfig, not args.cpu)
     step_s = DEFAULT_CALIBRATION_STEP_S if args.step_s is None else args.step_s
     summary = run_calibration(args.video, workdir, match_id, config, step_s)
     sys.stdout.write(
@@ -110,6 +135,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         configure_logging(args.log_level)
         if args.command == "scoreboard":
             return _scoreboard(args)
+        if args.command == "plates":
+            return _plates(args)
         return _calibrate(args)
     except AicoachError as err:
         sys.stderr.write(f"error: {err}\n")

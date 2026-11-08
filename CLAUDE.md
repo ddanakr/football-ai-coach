@@ -54,7 +54,7 @@ YouTube URL → ingest → [scoreboard+plates] ┐
                      → [speech]              ┘
 ```
 
-Раскладка репозитория. Пометка «план» означает, что модуля или файла в коде ещё нет (состояние на 2026-11-05):
+Раскладка репозитория. Пометка «план» означает, что модуля или файла в коде ещё нет (состояние на 2026-11-08):
 
 ```
 .
@@ -64,8 +64,9 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 ├── configs/            # план: пороги, окна NMS, лексиконы, шаблоны плашек (yaml); пока пороги лежат в pydantic-моделях стадий (D-031)
 ├── docs/               # TZ.md; протокол разметки (план)
 ├── src/aicoach/
-│   ├── cli.py          # точка входа: python -m aicoach.cli <команда>; команды: scoreboard, scoreboard-calibrate
+│   ├── cli.py          # точка входа: python -m aicoach.cli <команда>; команды: scoreboard, scoreboard-calibrate, plates
 │   ├── status.py       # status.json каталога матча: состояние стадий (running, done, failed) и прогресс
+│   ├── stage_common.py # общие помощники стадий: атомарная запись, статус, прогресс, запись сбоя
 │   ├── errors.py       # иерархия исключений
 │   ├── logging_setup.py  # structlog, JSON-строки в stderr
 │   ├── config.py       # план: Settings (pydantic-settings)
@@ -79,6 +80,11 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 │   │   ├── board.py  reader.py  glyphs.py   # видимость табло, чтение кадра, цифры по образцам
 │   │   ├── assemble.py  score.py  offsets.py  mapping.py   # чистая сборка результата: история счёта, сегменты видимости, смещение часов, соответствие минуты и времени видео
 │   │   └── config.py  schemas.py   # пороги и окна; pydantic-модели scoreboard.json
+│   ├── plates/         # стадия плашек: поиск, тип (гол, карточка, замена), время, команда по логотипу и смене счёта (фамилии не читаются)
+│   │   ├── stage.py        # запуск стадии, кэш по ключу, plates.json, plate_crops/ и status.json
+│   │   ├── detect.py  layout.py   # чтение кадра по цвету и форме; положение частей плашки долями кадра
+│   │   ├── tracks.py  logos.py  teams.py  assemble.py   # склейка кадров в плашки, кластеры логотипов, команда по смене счёта, чистая сборка результата
+│   │   └── config.py  schemas.py   # пороги и окна; pydantic-модели plates.json
 │   ├── storage/        # SQLite-хранилище событий: db.py, schema.py, models.py, repository.py (миграций нет, версия схемы 1)
 │   ├── eval/           # сопоставление, метрики, bootstrap, схемы входа, отчёт в Markdown
 │   ├── ingest/  spotting/  speech/  fusion/   # план
@@ -91,7 +97,7 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 
 Каждая стадия: отдельная команда, чистые функции внутри, вход и выход через файл со схемой, пропуск уже готового, идемпотентность (тот же вход даёт тот же выход).
 
-Где лежат результаты. Стадия `scoreboard` принимает видео аргументом `--video` и пишет `scoreboard.json`, `status.json` и образцы цифр `scoreboard_templates/` в каталог этого видео, а не в `data/<match_id>/` (D-030; каталог видео и образцы не попадают в git). Остальные стадии, когда появятся, по плану пишут в каталог матча под `Settings.data_dir`. Состояние стадий читает интерфейс из `status.json`. Промежуточные картинки калибровки лежат только в `scratch/`.
+Где лежат результаты. Стадия `scoreboard` принимает видео аргументом `--video` и пишет `scoreboard.json`, `status.json` и образцы цифр `scoreboard_templates/` в каталог этого видео, а не в `data/<match_id>/` (D-030; каталог видео и образцы не попадают в git). Стадия `plates` пишет так же (`plates.json`, `plate_crops/`, `status.json` рядом с видео). Остальные стадии, когда появятся, по плану пишут в каталог матча под `Settings.data_dir`. Состояние стадий читает интерфейс из `status.json`. Промежуточные картинки калибровки лежат только в `scratch/`.
 
 ## 5. Доменные инварианты
 
@@ -128,7 +134,7 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 
 **Отказоустойчивость:**
 
-- Иерархия исключений в `errors.py`: базовый `AicoachError`; наследники `IngestError`, `ScoreboardParseError`, `SpottingError`, `TranscriptionError`, `FusionError`, `StorageError`, `EvalError`, `AgentValidationError`, `ConfigError`, `ExternalServiceError`.
+- Иерархия исключений в `errors.py`: базовый `AicoachError`; наследники `IngestError`, `ScoreboardParseError`, `PlatesError`, `SpottingError`, `TranscriptionError`, `FusionError`, `StorageError`, `EvalError`, `AgentValidationError`, `ConfigError`, `ExternalServiceError`.
 - Запрещены голый `except:`, `except Exception: pass` и проглатывание ошибки без записи в лог. Исключение либо обрабатывается осмысленно, либо оборачивается в типизированное и поднимается выше с `raise ... from err`.
 - Вход проверяется на границах (CLI, файлы, ответы API и моделей) схемами `pydantic`. Внутри ядра данные считаются проверенными.
 - Внешние вызовы (LLM API, загрузка): таймаут обязателен, повтор с экспоненциальной задержкой на временные ошибки (429, 5xx, сеть), затем `ExternalServiceError`. Ответ языковой модели проверяется схемой и валидатором ссылок.
