@@ -22,6 +22,7 @@ from aicoach.storage import (
     latest_run_id,
     transaction,
     undo_edit,
+    undo_last_edit,
 )
 from tests.fixtures.factories import make_new_prediction
 
@@ -572,6 +573,105 @@ def test_two_matches_in_one_database_do_not_mix(conn: sqlite3.Connection) -> Non
     assert {e.match_id for e in get_current_events(conn, OTHER)} == {OTHER}
     assert count_effective_edits(conn, MATCH) == 1
     assert count_effective_edits(conn, OTHER) == 2
+
+
+# --- undo_last_edit --------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_undo_last_edit_cancels_the_newest_edit_and_then_the_one_before(
+    conn: sqlite3.Connection,
+) -> None:
+    ids = _seed(conn)
+    first = add_edit(conn, MATCH, "move", author="a", target=f"p:{ids[0]}", t_v=150.0)
+    second = add_edit(conn, MATCH, "retype", author="a", target=f"p:{ids[1]}", type=EventType.FOUL)
+
+    undo_1 = undo_last_edit(conn, MATCH, "ui")
+    assert undo_1.undo_of == second.id
+    assert _event(conn, f"p:{ids[1]}").type == EventType.CORNER
+    assert _event(conn, f"p:{ids[0]}").t_v == 150.0
+
+    undo_2 = undo_last_edit(conn, MATCH, "ui")
+    assert undo_2.undo_of == first.id
+    assert _event(conn, f"p:{ids[0]}").t_v == 100.0
+    assert count_effective_edits(conn, MATCH) == 0
+    assert len(_table_rows(conn, "edits")) == 4  # nothing was removed from the journal
+
+
+@pytest.mark.unit
+def test_undo_last_edit_brings_back_a_deleted_event(conn: sqlite3.Connection) -> None:
+    ids = _seed(conn)
+    add_edit(conn, MATCH, "delete", author="a", target=f"p:{ids[0]}")
+
+    undo_last_edit(conn, MATCH, "ui")
+
+    assert len(get_current_events(conn, MATCH)) == 3
+
+
+@pytest.mark.unit
+def test_undo_last_edit_removes_an_added_event(conn: sqlite3.Connection) -> None:
+    _seed(conn)
+    add_edit(conn, MATCH, "add", author="a", type=EventType.SHOT, t_v=5.0)
+
+    undo_last_edit(conn, MATCH, "ui")
+
+    assert len(get_current_events(conn, MATCH)) == 3
+
+
+@pytest.mark.unit
+def test_undo_last_edit_without_edits_raises(conn: sqlite3.Connection) -> None:
+    _seed(conn)
+
+    with pytest.raises(StorageError, match="no edit to undo"):
+        undo_last_edit(conn, MATCH, "ui")
+
+    assert _table_rows(conn, "edits") == []
+
+
+@pytest.mark.unit
+def test_undo_last_edit_after_everything_is_undone_raises(conn: sqlite3.Connection) -> None:
+    ids = _seed(conn)
+    add_edit(conn, MATCH, "delete", author="a", target=f"p:{ids[0]}")
+    undo_last_edit(conn, MATCH, "ui")
+
+    with pytest.raises(StorageError, match="no edit to undo"):
+        undo_last_edit(conn, MATCH, "ui")
+
+
+@pytest.mark.unit
+def test_undo_last_edit_rejects_an_empty_author(conn: sqlite3.Connection) -> None:
+    ids = _seed(conn)
+    add_edit(conn, MATCH, "delete", author="a", target=f"p:{ids[0]}")
+
+    with pytest.raises(StorageError, match="author"):
+        undo_last_edit(conn, MATCH, "")
+
+    assert count_effective_edits(conn, MATCH) == 1
+
+
+@pytest.mark.unit
+def test_undo_last_edit_skips_edits_of_an_older_run(conn: sqlite3.Connection) -> None:
+    ids = _seed(conn)
+    add_edit(conn, MATCH, "delete", author="a", target=f"p:{ids[0]}")
+    own = add_edit(conn, MATCH, "add", author="a", type=EventType.SHOT, t_v=5.0)
+    add_predictions(conn, MATCH, "run-2", [make_new_prediction("goal", 10.0)])
+
+    # The delete belongs to run-1 and is not applied any more: only the add is undoable.
+    assert undo_last_edit(conn, MATCH, "ui").undo_of == own.id
+    with pytest.raises(StorageError, match="no edit to undo"):
+        undo_last_edit(conn, MATCH, "ui")
+
+
+@pytest.mark.unit
+def test_undo_last_edit_looks_only_at_its_own_match(conn: sqlite3.Connection) -> None:
+    _seed(conn, MATCH)
+    ids_other = _seed(conn, OTHER)
+    add_edit(conn, OTHER, "delete", author="a", target=f"p:{ids_other[0]}")
+
+    with pytest.raises(StorageError, match="no edit to undo"):
+        undo_last_edit(conn, MATCH, "ui")
+
+    assert count_effective_edits(conn, OTHER) == 1
 
 
 # --- add_predictions -------------------------------------------------------------------

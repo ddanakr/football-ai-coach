@@ -223,9 +223,33 @@ def test_table_records_have_russian_columns_in_order_and_empty_unknowns() -> Non
 
     records = table_records(rows)
 
-    assert list(records[0]) == ["Время", "Тип", "Тайм", "Уверенность", "Источник", "Команда"]
-    assert list(records[0].values()) == ["12:34", "Удар", "2", 0.8123, "модель и плашка", "гости"]
-    assert list(records[1].values()) == ["01:40", "Гол (добавлено вручную)", "", None, "", ""]
+    assert list(records[0]) == [
+        "Время",
+        "Тип",
+        "Тайм",
+        "Уверенность",
+        "Источник",
+        "Команда",
+        "Правка",
+    ]
+    assert list(records[0].values()) == [
+        "12:34",
+        "Удар",
+        "2",
+        0.8123,
+        "модель и плашка",
+        "гости",
+        "",
+    ]
+    assert list(records[1].values()) == [
+        "01:40",
+        "Гол (добавлено вручную)",
+        "",
+        None,
+        "",
+        "",
+        "добавлено",
+    ]
 
 
 @pytest.mark.unit

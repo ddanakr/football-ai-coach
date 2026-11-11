@@ -51,7 +51,7 @@ python -m aicoach.cli spot       --match-id <ID> --branch a   # или --branch 
 python -m aicoach.cli speech     --match-id <ID>          # VAD, Whisper, лексикон
 python -m aicoach.cli fuse       --video <PATH_TO_SRC_MP4> [--predictions <PATH_TO_TDEED_JSON>] [--config <FILE.json>] [--db <FILE>] [--match-id <ID>] [--force] [--discard-edits]   # слияние правилами: события в aicoach.db и candidates.json рядом с видео
 python -m aicoach.cli run        --video <PATH_TO_SRC_MP4> [--predictions <PATH_TO_TDEED_JSON>] [--config <FILE.json>] [--match-id <ID>] [--cpu] [--force] [--discard-edits]   # scoreboard, plates, fuse по порядку (модели в нём нет)
-python -m aicoach.cli ui         --video <PATH_TO_SRC_MP4> --youtube-id <ID> [--match-id <ID>] [--db <FILE>]   # просмотр событий в браузере (Streamlit), ID видео только параметр; id с «-» в начале писать как --youtube-id=<ID>
+python -m aicoach.cli ui         --video <PATH_TO_SRC_MP4> --youtube-id <ID> [--match-id <ID>] [--db <FILE>]   # события в браузере (Streamlit): просмотр и ручные правки (добавить, сдвинуть, сменить тип, удалить, отменить последнюю; пишутся в журнал `edits`, проверка времени по `candidates.json` и `scoreboard.json` рядом с видео); ID видео только параметр; id с «-» в начале писать как --youtube-id=<ID>
 python -m aicoach.cli eval       --match-id <ID> --split half2   # метрики, запуск в MLflow
 python -m aicoach.cli export-clip --match-id <ID> --event-id <EVENT_ID>
 ```

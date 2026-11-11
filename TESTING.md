@@ -184,7 +184,7 @@ tests/
 │   ├── spotting/     test_schemas.py   test_convert.py   test_evaluation.py   test_cli.py
 │   ├── speech/       test_lexicon.py        test_language_routing.py   test_name_normalization.py
 │   ├── fusion/       test_config_and_halves.py   test_rules.py   test_stage.py   test_pipeline.py   test_cli.py   # test_replay_suppression.py: план, детектор повторов (D-032)
-│   ├── ui/           test_logic.py   test_launch_and_data.py   test_cli.py   test_app.py   # test_app.py: AppTest, помечен allow_hosts для loopback (цикл asyncio на Windows)
+│   ├── ui/           test_logic.py   test_edits.py   test_edit_data.py   test_launch_and_data.py   test_cli.py   test_app.py   test_app_edits.py   # test_app.py: AppTest, помечен allow_hosts для loopback (цикл asyncio на Windows)
 │   ├── eval/         test_matching.py       test_metrics.py            test_bootstrap.py
 │   ├── storage/      test_edits_log.py      test_events_view.py
 │   ├── agent/        test_tools.py          test_citation_validator.py

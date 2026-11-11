@@ -135,11 +135,19 @@ class EventRow:
     source_text: str
     team_text: str
     status_text: str
+    edit_text: str = ""
 
     @property
     def type_text(self) -> str:
         """Category with the status note in brackets, if there is one."""
         return f"{self.type_label} ({self.status_text})" if self.status_text else self.type_label
+
+
+def edit_mark(event: CurrentEvent) -> str:
+    """Text for the "edit" column: added by the user, edited by the user, or empty."""
+    if event.origin == "user":
+        return ru.MARK_ADDED
+    return ru.MARK_EDITED if event.n_edits else ""
 
 
 def to_row(event: CurrentEvent) -> EventRow:
@@ -159,6 +167,7 @@ def to_row(event: CurrentEvent) -> EventRow:
         status_text=""
         if event.status == "auto"
         else ru.STATUS_LABELS.get(event.status, event.status),
+        edit_text=edit_mark(event),
     )
 
 
@@ -175,8 +184,8 @@ def table_records(rows: Sequence[EventRow]) -> list[dict[str, str | float | None
     """Rows of the events table, one dict per event; unknown values are empty.
 
     Keys are the Russian column names in display order: time, type, half, confidence, source,
-    team. The order of the records is the order of `rows`, so a selected table index is an
-    index into `rows`.
+    team, edit mark. The order of the records is the order of `rows`, so a selected table
+    index is an index into `rows`.
     """
     return [
         {
@@ -186,6 +195,7 @@ def table_records(rows: Sequence[EventRow]) -> list[dict[str, str | float | None
             ru.COLUMN_SCORE: row.score,
             ru.COLUMN_SOURCE: _blank(row.source_text),
             ru.COLUMN_TEAM: _blank(row.team_text),
+            ru.COLUMN_EDIT: row.edit_text,
         }
         for row in rows
     ]

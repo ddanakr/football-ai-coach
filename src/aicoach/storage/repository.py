@@ -248,6 +248,15 @@ def get_current_events(
     return [CurrentEvent.model_validate(dict(row)) for row in rows]
 
 
+# Edits in force, as `count_effective_edits` and `undo_last_edit` see them. Bound parameter `:m`.
+_EDITS_IN_FORCE = """
+FROM effective_edits AS x
+WHERE x.match_id = :m
+  AND (x.action = 'add'
+       OR x.target IN (SELECT event_id FROM events_current WHERE match_id = :m))
+"""
+
+
 def count_effective_edits(conn: sqlite3.Connection, match_id: str) -> int:
     """Count the edits of a match that are in force: the "edits per match" metric.
 
@@ -256,13 +265,36 @@ def count_effective_edits(conn: sqlite3.Connection, match_id: str) -> int:
     from earlier runs (they are not applied, D-028). `add` edits count in every run.
     """
     with translate_errors("cannot count edits"):
+        row = conn.execute(f"SELECT COUNT(*) {_EDITS_IN_FORCE}", {"m": match_id}).fetchone()  # noqa: S608
+    return int(row[0])
+
+
+def undo_last_edit(conn: sqlite3.Connection, match_id: str, author: str) -> EditRecord:
+    """Cancel the most recent edit of the match that is in force, by an `undo` record.
+
+    "In force" is the same set that `count_effective_edits` counts, so the edit that is undone
+    is always one the user can see in the current view. Calling it again undoes the edit before
+    that one. The look-up and the `undo` are one transaction, so two clicks cannot undo the
+    same edit twice.
+
+    Returns:
+        The new `undo` record (`undo_of` is the id of the cancelled edit).
+
+    Raises:
+        StorageError: Empty `author`, no edit in force, or a database failure.
+    """
+    if not author:
+        msg = "author must not be empty"
+        raise StorageError(msg)
+    with transaction(conn), translate_errors("cannot undo the last edit"):
         row = conn.execute(
-            """
-            SELECT COUNT(*) FROM effective_edits AS x
-            WHERE x.match_id = :m
-              AND (x.action = 'add'
-                   OR x.target IN (SELECT event_id FROM events_current WHERE match_id = :m))
-            """,
+            f"SELECT x.id {_EDITS_IN_FORCE} ORDER BY x.id DESC LIMIT 1",  # noqa: S608
             {"m": match_id},
         ).fetchone()
-    return int(row[0])
+        if row is None:
+            msg = f"match {match_id!r} has no edit to undo"
+            raise StorageError(msg)
+        undone = conn.execute(
+            _INSERT_EDIT, (match_id, "undo", None, None, None, int(row["id"]), author)
+        ).fetchone()
+    return EditRecord.model_validate(dict(undone))
