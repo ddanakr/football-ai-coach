@@ -171,6 +171,8 @@ tests/
 ├── fixtures/                    # только синтетика
 │   ├── factories.py             # фабрики событий, плашек, реплик
 │   ├── scoreboard_synth.py      # кадры табло, нарисованные OpenCV
+│   ├── fusion_synth.py          # плашки, plates.json и входные файлы стадии fuse без картинок, файл T-DEED
+│   ├── pipeline_fakes.py        # тестовые функции стадий для команды run: записывают вызовы, могут падать
 │   ├── transcripts/             # маленькие JSON
 │   └── labels/                  # синтетическая разметка
 ├── unit/
@@ -180,7 +182,7 @@ tests/
 │   ├── plates/       test_detect.py   test_tracks.py   test_logos.py   test_teams.py   test_assemble.py   test_stage.py   test_cli.py
 │   ├── spotting/     test_schemas.py   test_convert.py   test_evaluation.py   test_cli.py
 │   ├── speech/       test_lexicon.py        test_language_routing.py   test_name_normalization.py
-│   ├── fusion/       test_rules.py          test_replay_suppression.py
+│   ├── fusion/       test_config_and_halves.py   test_rules.py   test_stage.py   test_pipeline.py   test_cli.py   # test_replay_suppression.py: план, детектор повторов (D-032)
 │   ├── eval/         test_matching.py       test_metrics.py            test_bootstrap.py
 │   ├── storage/      test_edits_log.py      test_events_view.py
 │   ├── agent/        test_tools.py          test_citation_validator.py
