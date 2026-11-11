@@ -14,6 +14,7 @@ dependencies = [
     "structlog",
     "numpy",
     "opencv-python-headless",
+    "streamlit>=1.40,<2",
 ]
 
 [project.optional-dependencies]
@@ -71,7 +72,7 @@ markers = [
 [tool.coverage.run]
 source = ["src/aicoach"]
 branch = true
-omit = ["src/aicoach/ui/*", "src/aicoach/cli.py", "*/__main__.py"]
+omit = ["src/aicoach/ui/app.py", "src/aicoach/cli.py", "*/__main__.py"]
 
 [tool.coverage.report]
 fail_under = 80

@@ -64,14 +64,14 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 ├── configs/            # план: пороги, окна NMS, лексиконы, шаблоны плашек (yaml); пока пороги лежат в pydantic-моделях стадий (D-031)
 ├── docs/               # TZ.md; протокол разметки
 ├── src/aicoach/
-│   ├── cli.py          # точка входа: python -m aicoach.cli <команда>; команды: scoreboard, scoreboard-calibrate, plates, spotting-eval, fuse, run
+│   ├── cli.py          # точка входа: python -m aicoach.cli <команда>; команды: scoreboard, scoreboard-calibrate, plates, spotting-eval, fuse, run, ui
 │   ├── pipeline.py     # команда `run`: scoreboard, plates, fusion по порядку, статус `run` в status.json; модели в ней нет
 │   ├── status.py       # status.json каталога матча: состояние стадий (running, done, failed) и прогресс
 │   ├── stage_common.py # общие помощники стадий: атомарная запись, статус, прогресс, запись сбоя
 │   ├── errors.py       # иерархия исключений
 │   ├── logging_setup.py  # structlog, JSON-строки в stderr
 │   ├── config.py       # план: Settings (pydantic-settings)
-│   ├── i18n/           # план
+│   ├── i18n/           # тексты интерфейса: ru.py (казахский: план)
 │   ├── domain/         # события и категории (events.py)
 │   ├── scoreboard/     # стадия табло: часы, счёт, смены счёта, добавленное время, соответствие t_v и минуты
 │   │   ├── stage.py        # запуск стадии, кэш по ключу, scoreboard.json и status.json
@@ -102,7 +102,11 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 │   ├── ingest/  speech/    # план
 │   ├── agent/          # план: инструменты, проверка ссылок, промпты
 │   ├── export/         # план: клипы FFmpeg
-│   └── ui/             # план
+│   └── ui/             # просмотр событий (Streamlit, только чтение, D-054)
+│       ├── app.py          # тонкий скрипт Streamlit: плеер st.video, таблица событий с выбором строки, фильтры в боковой панели
+│       ├── logic.py        # чистые функции: фильтры, mm:ss, подписи, youtube_link, строки таблицы, выбор строки → событие
+│       ├── launch.py       # аргументы скрипта после `--` и команда запуска streamlit; ID видео только аргумент процесса
+│       └── data.py         # чтение events_current через слой хранилища
 ├── tests/              # структура в TESTING.md
 ├── data_labels/        # эталон разметки: JSON-файлы формата GroundTruth (D-040), в git
 ├── data/  mlruns/  scratch/   # в .gitignore

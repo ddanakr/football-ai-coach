@@ -5,6 +5,7 @@ argument; results are written next to the video (the match directory).
 """
 
 import argparse
+import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -16,7 +17,7 @@ from aicoach.errors import AicoachError, ConfigError
 from aicoach.fusion.config import load_fuse_config
 from aicoach.fusion.rules import count_events
 from aicoach.fusion.schemas import CandidatesResult
-from aicoach.fusion.stage import run_fuse
+from aicoach.fusion.stage import DB_FILE, run_fuse
 from aicoach.logging_setup import configure_logging
 from aicoach.pipeline import run_pipeline
 from aicoach.plates.config import PlatesConfig
@@ -31,6 +32,8 @@ from aicoach.scoreboard.stage import (
 from aicoach.spotting.convert import DEFAULT_FPS, DEFAULT_MERGE_RADIUS_S
 from aicoach.spotting.evaluation import DEFAULT_THRESHOLDS, DEVELOPMENT_HALF, format_evaluation
 from aicoach.spotting.run import DEFAULT_GROUND_TRUTH, run_spotting_eval
+from aicoach.ui.launch import AppArgs, build_streamlit_command
+from aicoach.ui.logic import validate_video_id
 
 _DEFAULT_WORKDIR_ROOT = Path("scratch")
 _Config = TypeVar("_Config", ScoreboardConfig, PlatesConfig)
@@ -67,6 +70,12 @@ def build_parser() -> argparse.ArgumentParser:
     run = commands.add_parser("run", help="scoreboard, plates and fuse in order (no model)")
     run.add_argument("--cpu", action="store_true", help="decode on the CPU (very slow for AV1)")
     _add_fuse_options(run, force_help="recompute all three stages (reads the video twice, slow)")
+
+    ui = commands.add_parser("ui", help="open the event viewer in the browser (view only)")
+    ui.add_argument("--video", type=Path, required=True, help="path of the match video")
+    ui.add_argument("--youtube-id", required=True, help="YouTube id of the same match (11 chars)")
+    ui.add_argument("--match-id", help="default: name of the video's directory")
+    ui.add_argument("--db", type=Path, help="database file (default: aicoach.db by the video)")
 
     calib = commands.add_parser(
         "scoreboard-calibrate", help="cut digit templates from the broadcast (two steps)"
@@ -252,6 +261,21 @@ def _spotting_eval(args: argparse.Namespace) -> int:
     return 0
 
 
+def _ui(args: argparse.Namespace) -> int:
+    """Run the Streamlit viewer; its exit code is ours. The video id stays in the arguments."""
+    app_args = AppArgs(
+        db=args.db or args.video.parent / DB_FILE,
+        match_id=_match_id(args),
+        youtube_id=validate_video_id(args.youtube_id),
+    )
+    command = build_streamlit_command(app_args)
+    try:
+        # Fixed program and our own arguments: nothing here comes from a shell string.
+        return subprocess.run(command, check=False).returncode  # noqa: S603
+    except KeyboardInterrupt:
+        return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run a command; returns the process exit code (0 ok, 2 on a handled error)."""
     args = build_parser().parse_args(argv)
@@ -267,6 +291,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _fuse(args)
         if args.command == "run":
             return _run(args)
+        if args.command == "ui":
+            return _ui(args)
         return _calibrate(args)
     except AicoachError as err:
         sys.stderr.write(f"error: {err}\n")
