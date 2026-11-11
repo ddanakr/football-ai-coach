@@ -291,11 +291,18 @@ def test_card_foul_window_edges_are_40_s_before_and_5_s_after(foul_t: float, lif
 
 
 @pytest.mark.unit
-def test_card_plate_without_a_model_gives_a_foul_12_s_before_the_plate() -> None:
-    out = run(plates=[plate("p1", "card", 600.0, team="home")], model=None)
+def test_card_plate_without_a_model_gives_a_foul_lead_s_before_the_plate() -> None:
+    config = FuseConfig(card_foul_lead_s=15.0)
+
+    out = run(plates=[plate("p1", "card", 600.0, team="home")], model=None, config=config)
 
     (foul,) = of_type(out, EventType.FOUL)
-    assert (foul.t_v, foul.score, foul.team, foul.source) == (588.0, 0.5, "home", "plates_only")
+    assert (foul.t_v, foul.score, foul.team, foul.source) == (
+        600.0 - config.card_foul_lead_s,
+        0.5,
+        "home",
+        "plates_only",
+    )
     assert NO_MODEL_WARNING in out.warnings
 
 
@@ -318,12 +325,15 @@ def test_one_model_foul_serves_one_card_plate() -> None:
 
 @pytest.mark.unit
 def test_card_plate_picks_the_foul_nearest_to_the_expected_moment() -> None:
-    model = [make_pred("foul", 570.0, score=0.9), make_pred("foul", 590.0, score=0.3)]
+    config = FuseConfig(card_foul_lead_s=20.0)
+    expected = 600.0 - config.card_foul_lead_s
+    near = make_pred("foul", expected + 5.0, score=0.3)
+    far = make_pred("foul", expected - 20.0, score=0.9)  # stronger, but farther from `expected`
 
-    out = run(plates=[plate("p1", "card", 600.0)], model=model)
+    out = run(plates=[plate("p1", "card", 600.0)], model=[far, near], config=config)
 
     lifted = [c for c in of_type(out, EventType.FOUL) if c.source == "model+plates"]
-    assert [c.t_v for c in lifted] == [590.0]
+    assert [c.t_v for c in lifted] == [near.t_v]
 
 
 @pytest.mark.unit

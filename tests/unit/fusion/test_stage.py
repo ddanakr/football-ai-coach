@@ -64,7 +64,8 @@ def events(match_dir: Path) -> list[tuple[str, float]]:
 def test_run_fuse_without_model_writes_events_candidates_and_status(match_dir: Path) -> None:
     result = run_fuse(match_dir, MATCH, run_id="r1")
 
-    assert events(match_dir) == [("goal", 200.0), ("subst", 600.0), ("foul", 688.0)]
+    foul_t = 700.0 - FuseConfig().card_foul_lead_s  # the card plate is at 700 s
+    assert events(match_dir) == [("goal", 200.0), ("subst", 600.0), ("foul", foul_t)]
     assert result.mode == "no_model"
     assert NO_MODEL_WARNING in result.warnings
     assert (result.run_id, result.counts) == (

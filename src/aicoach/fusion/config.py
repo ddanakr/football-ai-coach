@@ -46,11 +46,13 @@ class FuseConfig(BaseModel):
     shot_goal_radius_s: _Seconds = 10.0
 
     # Card plate: a model foul in [plate - before, plate + after] is lifted; otherwise a foul
-    # is added `lead` seconds before the plate (one observation: the plate came 12 s late).
+    # is added `lead` seconds before the plate. The 22 s is measured, not tuned on the metric: on
+    # 3 card plates of half 1 of one match the nearest earlier foul lies 17.7-25.9 s before the
+    # plate (D-053).
     card_foul_window_before_s: _Seconds = 40.0
     card_foul_window_after_s: _Seconds = 5.0
     card_foul_boost_score: _Score = 0.9
-    card_foul_lead_s: _Seconds = 12.0
+    card_foul_lead_s: _Seconds = 22.0
     card_foul_plate_only_score: _Score = 0.5
 
     # Half bounds come from the clock segments of scoreboard.json: the first clock reading of a
