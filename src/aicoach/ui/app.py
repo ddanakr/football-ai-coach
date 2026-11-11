@@ -21,15 +21,18 @@ from aicoach.ui.logic import (
     filter_events,
     iframe_html,
     player_start,
+    selected_row,
+    table_records,
     to_rows,
     watch_url,
     youtube_link,
 )
 
-# The page gives the player frame this height until the frame fits itself to the 16:9 width;
-# the list is as tall as the player plus the line above it and the link below it.
+# The page gives the player frame this height until the frame fits itself to the 16:9 width.
 PLAYER_HEIGHT_PX = 540
-LIST_HEIGHT_PX = PLAYER_HEIGHT_PX + 90
+PLAYER_COLUMNS = [1, 4, 1]  # the player sits in the middle one, it is not stretched over the page
+TABLE_HEIGHT_PX = 380
+TABLE_KEY = "events_table"
 _SELECTED = "selected_row"
 _CLICKS = "play_clicks"
 _HALF_OPTIONS: list[HalfFilter] = [None, 1, 2]
@@ -39,6 +42,11 @@ def _select(row: EventRow) -> None:
     """Button callback: remember the chosen event; runs before the script reruns."""
     st.session_state[_SELECTED] = row
     st.session_state[_CLICKS] = st.session_state.get(_CLICKS, 0) + 1
+
+
+def _current_event_id() -> str | None:
+    chosen: EventRow | None = st.session_state.get(_SELECTED)
+    return None if chosen is None else chosen.event_id
 
 
 def _half_text(half: HalfFilter) -> str:
@@ -62,20 +70,18 @@ def _sidebar(events: list[CurrentEvent]) -> tuple[EventFilter, str]:
     return EventFilter(types=frozenset(types), half=half, min_score=min_score), str(variant)
 
 
-def _render_list(rows: list[EventRow]) -> None:
-    with st.container(height=LIST_HEIGHT_PX):
-        for row in rows:
-            play, when, what = st.columns([1, 2, 4], vertical_alignment="center")
-            play.button(
-                ru.PLAY_BUTTON,
-                key=f"play_{row.event_id}",
-                help=ru.PLAY_HELP,
-                on_click=_select,
-                args=(row,),
-            )
-            when.markdown(f"**{row.time_text}**")
-            what.write(row.type_text)
-            st.caption(row.details_text)
+def _render_table(rows: list[EventRow]) -> EventRow | None:
+    """Draw the events table over the full width; return the row the user picked, if any."""
+    state = st.dataframe(
+        table_records(rows),
+        key=TABLE_KEY,
+        hide_index=True,
+        height=TABLE_HEIGHT_PX,
+        on_select="rerun",
+        selection_mode="single-row",
+        column_config={ru.COLUMN_SCORE: st.column_config.NumberColumn(format="%.2f")},
+    )
+    return selected_row(rows, state.selection.rows)
 
 
 def _render_player(args: AppArgs, variant: str) -> None:
@@ -86,6 +92,8 @@ def _render_player(args: AppArgs, variant: str) -> None:
     autoplay = selected is not None
     if selected is not None:
         st.markdown(f"**{ru.PLAYING.format(type=selected.type_label, time=selected.time_text)}**")
+    else:
+        st.caption(ru.TABLE_HINT)
     if variant == ru.PLAYER_IFRAME:
         html = iframe_html(
             args.youtube_id,
@@ -126,15 +134,20 @@ def main() -> None:
 
     flt, variant = _sidebar(events)
     shown = filter_events(events, flt)
-    player_col, list_col = st.columns([3, 1.3])
-    with player_col:
-        _render_player(args, variant)
-    with list_col:
-        st.caption(ru.SHOWN.format(shown=len(shown), total=len(events)))
-        if shown:
-            _render_list(to_rows(shown))
-        else:
-            st.info(ru.NOTHING_MATCHES)
+    player_slot = st.container()  # filled below the table code: the pick is known only then
+    st.caption(ru.SHOWN.format(shown=len(shown), total=len(events)))
+    if shown:
+        rows = to_rows(shown)
+        picked = _render_table(rows)
+        # Only a new pick restarts the player; other reruns (filters, variant) leave it alone.
+        if picked is not None and picked.event_id != _current_event_id():
+            _select(picked)
+    else:
+        st.info(ru.NOTHING_MATCHES)
+    with player_slot:
+        _, middle, _ = st.columns(PLAYER_COLUMNS)
+        with middle:
+            _render_player(args, variant)
 
 
 main()

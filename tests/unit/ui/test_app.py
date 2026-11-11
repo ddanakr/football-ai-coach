@@ -29,6 +29,17 @@ def markdown_text(app: AppTest) -> str:
     return "\n".join(str(m.value) for m in app.markdown)
 
 
+def table_rows(app: AppTest) -> int:
+    """Number of rows in the events table."""
+    return len(app.dataframe[0].value)
+
+
+def pick_row(app: AppTest, index: int) -> AppTest:
+    """Select a table row the way a click on it does: through the table's selection state."""
+    app.session_state["events_table"] = {"selection": {"rows": [index], "columns": []}}
+    return app.run()
+
+
 @pytest.mark.unit
 def test_app_without_database_tells_to_run_first(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -81,7 +92,7 @@ def test_app_with_bad_arguments_shows_an_error(monkeypatch: pytest.MonkeyPatch) 
 
 
 @pytest.mark.unit
-def test_app_lists_all_events_and_shows_the_start_of_the_video(
+def test_app_lists_all_events_in_one_table_and_shows_the_start_of_the_video(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     db = tmp_path / "e.db"
@@ -90,7 +101,16 @@ def test_app_lists_all_events_and_shows_the_start_of_the_video(
     app = run_app(monkeypatch, db)
 
     assert not app.exception
-    assert len(app.button) == 5
+    assert len(app.dataframe) == 1
+    assert table_rows(app) == 5
+    assert list(app.dataframe[0].value.columns) == [
+        ru.COLUMN_TIME,
+        ru.COLUMN_TYPE,
+        ru.COLUMN_HALF,
+        ru.COLUMN_SCORE,
+        ru.COLUMN_SOURCE,
+        ru.COLUMN_TEAM,
+    ]
     text = markdown_text(app)
     assert f"https://www.youtube.com/watch?v={VID}" in text
     assert "&t=" not in text
@@ -98,14 +118,30 @@ def test_app_lists_all_events_and_shows_the_start_of_the_video(
 
 
 @pytest.mark.unit
-def test_click_on_play_selects_the_event_and_links_to_five_seconds_before(
+def test_table_shows_mmss_russian_type_and_empty_unknowns(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    db = tmp_path / "e.db"
+    write_events_db(db)
+
+    table = run_app(monkeypatch, db).dataframe[0].value
+
+    first = table.iloc[0]
+    assert (first[ru.COLUMN_TIME], first[ru.COLUMN_TYPE]) == ("10:00", "Гол")
+    assert (first[ru.COLUMN_HALF], first[ru.COLUMN_SOURCE]) == ("1", "табло и плашки")
+    assert first[ru.COLUMN_TEAM] == "хозяева"
+    assert table.iloc[1][ru.COLUMN_TEAM] == ""  # a model event has no team
+
+
+@pytest.mark.unit
+def test_picking_a_row_links_to_five_seconds_before_the_event(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     db = tmp_path / "e.db"
     write_events_db(db)
     app = run_app(monkeypatch, db)
 
-    app.button[0].click().run()
+    pick_row(app, 0)
 
     assert not app.exception
     text = markdown_text(app)
@@ -114,15 +150,15 @@ def test_click_on_play_selects_the_event_and_links_to_five_seconds_before(
 
 
 @pytest.mark.unit
-def test_click_on_another_event_moves_the_link(
+def test_picking_another_row_moves_the_link(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     db = tmp_path / "e.db"
     write_events_db(db)
     app = run_app(monkeypatch, db)
 
-    app.button[0].click().run()
-    app.button[3].click().run()
+    pick_row(app, 0)
+    pick_row(app, 3)
 
     text = markdown_text(app)
     assert "&t=3995s" in text
@@ -130,7 +166,7 @@ def test_click_on_another_event_moves_the_link(
 
 
 @pytest.mark.unit
-def test_player_variant_st_video_starts_at_the_event(
+def test_player_variant_st_video_starts_at_the_picked_event(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     db = tmp_path / "e.db"
@@ -138,10 +174,24 @@ def test_player_variant_st_video_starts_at_the_event(
     app = run_app(monkeypatch, db)
 
     app.sidebar.radio[0].set_value(ru.PLAYER_ST_VIDEO).run()
-    app.button[2].click().run()
+    pick_row(app, 2)
 
     assert not app.exception
     assert "&t=1195s" in markdown_text(app)
+
+
+@pytest.mark.unit
+def test_changing_the_variant_keeps_the_picked_event(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    db = tmp_path / "e.db"
+    write_events_db(db)
+    app = run_app(monkeypatch, db)
+    pick_row(app, 1)
+
+    app.sidebar.radio[0].set_value(ru.PLAYER_ST_VIDEO).run()
+
+    assert "&t=895s" in markdown_text(app)
 
 
 @pytest.mark.unit
@@ -151,14 +201,28 @@ def test_filter_by_type_and_half_and_score(monkeypatch: pytest.MonkeyPatch, tmp_
     app = run_app(monkeypatch, db)
 
     app.sidebar.radio[1].set_value(2).run()
-    assert len(app.button) == 2  # the corner and the substitution of the second half
+    assert table_rows(app) == 2  # the corner and the substitution of the second half
 
     app.sidebar.slider[0].set_value(0.7).run()
-    assert len(app.button) == 1  # the corner (0.60) is below, the substitution has no score
+    assert table_rows(app) == 1  # the corner (0.60) is below, the substitution has no score
 
     app.sidebar.radio[1].set_value(None).run()
     app.sidebar.multiselect[0].set_value(["goal", "shot"]).run()
-    assert len(app.button) == 1
+    assert table_rows(app) == 1
+
+
+@pytest.mark.unit
+def test_pick_after_filtering_maps_to_the_filtered_row(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    db = tmp_path / "e.db"
+    write_events_db(db)
+    app = run_app(monkeypatch, db)
+    app.sidebar.radio[1].set_value(2).run()
+
+    pick_row(app, 1)  # second row of the filtered table: the substitution at 4300 s
+
+    assert "&t=4295s" in markdown_text(app)
 
 
 @pytest.mark.unit
@@ -172,5 +236,5 @@ def test_filters_that_leave_nothing_show_a_message_not_a_crash(
     app.sidebar.multiselect[0].set_value([]).run()
 
     assert not app.exception
-    assert len(app.button) == 0
+    assert len(app.dataframe) == 0
     assert [i.value for i in app.info] == [ru.NOTHING_MATCHES]

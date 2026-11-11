@@ -6,7 +6,7 @@ No Streamlit and no I/O here, so it is tested on its own and the agent can reuse
 
 import math
 import re
-from collections.abc import Collection, Iterable
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -184,21 +184,11 @@ class EventRow:
     time_text: str
     type_label: str
     half_text: str
+    score: float | None
     score_text: str
     source_text: str
     team_text: str
     status_text: str
-
-    @property
-    def details_text(self) -> str:
-        """Half, score, source and team in one line; unknown parts are left out."""
-        parts = [
-            ru.DETAIL_HALF.format(half=self.half_text) if self.half_text != ru.UNKNOWN else "",
-            ru.DETAIL_SCORE.format(score=self.score_text) if self.score_text != ru.UNKNOWN else "",
-            "" if self.source_text == ru.UNKNOWN else self.source_text,
-            "" if self.team_text == ru.UNKNOWN else self.team_text,
-        ]
-        return " · ".join(part for part in parts if part) or ru.UNKNOWN
 
     @property
     def type_text(self) -> str:
@@ -214,6 +204,7 @@ def to_row(event: CurrentEvent) -> EventRow:
         time_text=format_mmss(event.t_v),
         type_label=type_label(event.type),
         half_text=ru.UNKNOWN if event.half is None else str(event.half),
+        score=event.score,
         score_text=ru.UNKNOWN if event.score is None else f"{event.score:.2f}",
         source_text=ru.SOURCE_LABELS.get(event.source, event.source)
         if event.source
@@ -228,3 +219,40 @@ def to_row(event: CurrentEvent) -> EventRow:
 def to_rows(events: Collection[CurrentEvent]) -> list[EventRow]:
     """`to_row` for every event, order kept."""
     return [to_row(e) for e in events]
+
+
+def _blank(text: str) -> str:
+    return "" if text == ru.UNKNOWN else text
+
+
+def table_records(rows: Sequence[EventRow]) -> list[dict[str, str | float | None]]:
+    """Rows of the events table, one dict per event; unknown values are empty.
+
+    Keys are the Russian column names in display order: time, type, half, confidence, source,
+    team. The order of the records is the order of `rows`, so a selected table index is an
+    index into `rows`.
+    """
+    return [
+        {
+            ru.COLUMN_TIME: row.time_text,
+            ru.COLUMN_TYPE: row.type_text,
+            ru.COLUMN_HALF: _blank(row.half_text),
+            ru.COLUMN_SCORE: row.score,
+            ru.COLUMN_SOURCE: _blank(row.source_text),
+            ru.COLUMN_TEAM: _blank(row.team_text),
+        }
+        for row in rows
+    ]
+
+
+def selected_row(rows: Sequence[EventRow], selected: Sequence[int]) -> EventRow | None:
+    """The event of the table row the user picked, or `None` when nothing valid is picked.
+
+    `selected` holds indices into `rows` as the table reports them. The table allows one row;
+    if there are several, the first one counts. Indices that are negative or past the end (a
+    table that changed after the pick) give `None`.
+    """
+    if not selected:
+        return None
+    index = selected[0]
+    return rows[index] if 0 <= index < len(rows) else None

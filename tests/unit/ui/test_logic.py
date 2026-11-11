@@ -11,12 +11,15 @@ from aicoach.storage import CurrentEvent
 from aicoach.ui.logic import (
     PLAYER_PRE_ROLL_S,
     EventFilter,
+    EventRow,
     available_types,
     embed_url,
     filter_events,
     format_mmss,
     iframe_html,
     player_start,
+    selected_row,
+    table_records,
     to_row,
     to_rows,
     type_label,
@@ -239,19 +242,53 @@ def test_to_row_unknown_status_is_shown_as_is_and_away_team_is_guests() -> None:
 
 
 @pytest.mark.unit
-def test_details_text_joins_known_parts() -> None:
-    row = to_row(make_event(half=2, score=0.8, source="merge", team="away"))
+def test_table_records_have_russian_columns_in_order_and_empty_unknowns() -> None:
+    rows = to_rows(
+        [
+            make_event("p:1", EventType.SHOT, 754.3, 2, 0.8123, source="merge", team="away"),
+            make_event("e:2", half=None, score=None, status="manual", source=None, team=None),
+        ]
+    )
 
-    assert row.details_text == "2-й тайм · уверенность 0.80 · модель и плашка · гости"
+    records = table_records(rows)
+
+    assert list(records[0]) == ["Время", "Тип", "Тайм", "Уверенность", "Источник", "Команда"]
+    assert list(records[0].values()) == ["12:34", "Удар", "2", 0.8123, "модель и плашка", "гости"]
+    assert list(records[1].values()) == ["01:40", "Гол (добавлено вручную)", "", None, "", ""]
 
 
 @pytest.mark.unit
-def test_details_text_leaves_out_unknown_parts_and_never_empty() -> None:
-    user = to_row(make_event(half=None, score=None, source=None, team=None))
-    plate = to_row(make_event(half=1, score=None, source="plates", team=None))
+def test_table_records_empty_input_gives_no_records() -> None:
+    assert table_records([]) == []
 
-    assert user.details_text == "—"
-    assert plate.details_text == "1-й тайм · табло и плашки"
+
+@pytest.fixture
+def rows() -> list[EventRow]:
+    return to_rows([make_event(f"p:{i}", t_v=10.0 * i) for i in range(3)])
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(("selected", "expected"), [([0], "p:0"), ([2], "p:2"), ([1, 0], "p:1")])
+def test_selected_row_returns_the_event_of_the_first_picked_index(
+    rows: list[EventRow], selected: list[int], expected: str
+) -> None:
+    chosen = selected_row(rows, selected)
+
+    assert chosen is not None
+    assert chosen.event_id == expected
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("selected", [[], [3], [-1], [99]])
+def test_selected_row_nothing_or_out_of_range_gives_none(
+    rows: list[EventRow], selected: list[int]
+) -> None:
+    assert selected_row(rows, selected) is None
+
+
+@pytest.mark.unit
+def test_selected_row_with_no_rows_gives_none() -> None:
+    assert selected_row([], [0]) is None
 
 
 @pytest.mark.unit
