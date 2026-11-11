@@ -39,6 +39,24 @@ def test_command_runs_streamlit_with_arguments_after_double_dash(tmp_path: Path)
 
 
 @pytest.mark.unit
+def test_match_dir_is_passed_on_and_read_back(tmp_path: Path) -> None:
+    args = AppArgs(db=tmp_path / "a.db", match_id="m1", youtube_id=VID, match_dir=tmp_path / "v")
+
+    command = build_streamlit_command(args, python="py")
+
+    assert command[-2:] == ["--match-dir", str(tmp_path / "v")]
+    assert parse_app_args(command[6:]) == args
+    assert args.results_dir == tmp_path / "v"
+
+
+@pytest.mark.unit
+def test_results_dir_defaults_to_the_directory_of_the_database(tmp_path: Path) -> None:
+    args = AppArgs(db=tmp_path / "a.db", match_id="m1", youtube_id=VID)
+
+    assert args.results_dir == tmp_path
+
+
+@pytest.mark.unit
 def test_command_defaults_to_the_current_interpreter(tmp_path: Path) -> None:
     command = build_streamlit_command(AppArgs(db=tmp_path / "a.db", match_id="m", youtube_id=VID))
 

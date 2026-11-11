@@ -21,6 +21,14 @@ class AppArgs:
     db: Path
     match_id: str
     youtube_id: str
+    # Where `candidates.json` and `scoreboard.json` lie (the video's directory); they give the
+    # half bounds and the video length that manual edits are checked against. None: next to `db`.
+    match_dir: Path | None = None
+
+    @property
+    def results_dir(self) -> Path:
+        """Directory with the stage results: `match_dir`, or the database's directory."""
+        return self.match_dir or self.db.parent
 
 
 def app_script() -> Path:
@@ -30,7 +38,7 @@ def app_script() -> Path:
 
 def build_streamlit_command(args: AppArgs, python: str | None = None) -> list[str]:
     """Command line that runs the viewer: `python -m streamlit run app.py -- <arguments>`."""
-    return [
+    command = [
         python or sys.executable,
         "-m",
         "streamlit",
@@ -44,6 +52,9 @@ def build_streamlit_command(args: AppArgs, python: str | None = None) -> list[st
         # `=` form: an id may start with "-", which argparse would take for an option.
         f"--youtube-id={args.youtube_id}",
     ]
+    if args.match_dir is not None:
+        command += ["--match-dir", str(args.match_dir)]
+    return command
 
 
 def parse_app_args(argv: Sequence[str]) -> AppArgs:
@@ -56,6 +67,7 @@ def parse_app_args(argv: Sequence[str]) -> AppArgs:
     parser.add_argument("--db", type=Path)
     parser.add_argument("--match-id")
     parser.add_argument("--youtube-id")
+    parser.add_argument("--match-dir", type=Path)
     try:
         # Streamlit may add its own words to the command line; they are not ours to judge.
         known, _ = parser.parse_known_args(list(argv))
@@ -67,5 +79,8 @@ def parse_app_args(argv: Sequence[str]) -> AppArgs:
             msg = f"the viewer needs --{name.replace('_', '-')}"
             raise ConfigError(msg)
     return AppArgs(
-        db=known.db, match_id=known.match_id, youtube_id=validate_video_id(known.youtube_id)
+        db=known.db,
+        match_id=known.match_id,
+        youtube_id=validate_video_id(known.youtube_id),
+        match_dir=known.match_dir,
     )

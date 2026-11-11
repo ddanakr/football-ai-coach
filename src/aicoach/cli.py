@@ -267,6 +267,7 @@ def _ui(args: argparse.Namespace) -> int:
         db=args.db or args.video.parent / DB_FILE,
         match_id=_match_id(args),
         youtube_id=validate_video_id(args.youtube_id),
+        match_dir=args.video.parent,
     )
     command = build_streamlit_command(app_args)
     try:

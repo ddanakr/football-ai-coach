@@ -63,9 +63,13 @@ def write_inputs(
     changes: list[ScoreChange] | None = None,
     plates: Sequence[Plate] = (),
     segments: list[tuple[float, float]] | None = None,
+    n_samples: int = 12,
 ) -> None:
-    """Write `scoreboard.json` and a matching `plates.json` (same version) into `match_dir`."""
-    board = scoreboard_result(changes, segments=segments or HALF_SPANS)
+    """Write `scoreboard.json` and a matching `plates.json` (same version) into `match_dir`.
+
+    `n_samples` is the length of the synthetic video in seconds (`video_duration_s`).
+    """
+    board = scoreboard_result(changes, n_samples=n_samples, segments=segments or HALF_SPANS)
     raw = board.model_dump_json().encode()
     version = hashlib.sha256(raw).hexdigest()
     (match_dir / "scoreboard.json").write_bytes(raw)

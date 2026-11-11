@@ -4,7 +4,10 @@ from pathlib import Path
 from typing import Literal
 
 from aicoach.domain.events import EventType
+from aicoach.fusion.stage import DB_FILE, run_fuse
 from aicoach.storage import CurrentEvent, NewPrediction, add_predictions, connect, init_db
+from tests.fixtures.fusion_synth import plate, write_inputs
+from tests.fixtures.plates_synth import change
 
 
 def make_event(
@@ -47,3 +50,20 @@ def write_events_db(path: Path, match_id: str = "m1") -> None:
     ]
     with connect(path) as conn:
         add_predictions(conn, match_id, "run1", predictions)
+
+
+def write_match_dir(match_dir: Path, match_id: str = "m1") -> Path:
+    """A match directory as the fusion stage leaves it: inputs, `candidates.json` and the database.
+
+    The synthetic video is 3000 s long with halves 100..1000 and 1500..2500 (the fusion stage
+    adds 15 s on both sides). Events: a goal at 200 s, a substitution at 600 s and a foul that
+    comes from a card plate at 700 s. Returns the database path.
+    """
+    write_inputs(
+        match_dir,
+        [change((0, 0), (1, 0), 199.0, 200.0)],
+        [plate("p1", "goal", 230.0), plate("p2", "subst", 600.0), plate("p3", "card", 700.0)],
+        n_samples=3000,
+    )
+    run_fuse(match_dir, match_id, run_id="run1")
+    return match_dir / DB_FILE

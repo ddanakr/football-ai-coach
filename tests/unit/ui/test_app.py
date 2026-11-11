@@ -110,6 +110,7 @@ def test_app_lists_all_events_in_one_table_and_shows_the_start_of_the_video(
         ru.COLUMN_SCORE,
         ru.COLUMN_SOURCE,
         ru.COLUMN_TEAM,
+        ru.COLUMN_EDIT,
     ]
     text = markdown_text(app)
     assert f"https://www.youtube.com/watch?v={VID}" in text

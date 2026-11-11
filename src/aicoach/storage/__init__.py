@@ -9,6 +9,7 @@ from aicoach.storage.repository import (
     get_current_events,
     latest_run_id,
     undo_edit,
+    undo_last_edit,
 )
 
 __all__ = [
@@ -25,4 +26,5 @@ __all__ = [
     "latest_run_id",
     "transaction",
     "undo_edit",
+    "undo_last_edit",
 ]
