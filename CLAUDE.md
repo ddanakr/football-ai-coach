@@ -64,7 +64,8 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 ├── configs/            # план: пороги, окна NMS, лексиконы, шаблоны плашек (yaml); пока пороги лежат в pydantic-моделях стадий (D-031)
 ├── docs/               # TZ.md; протокол разметки
 ├── src/aicoach/
-│   ├── cli.py          # точка входа: python -m aicoach.cli <команда>; команды: scoreboard, scoreboard-calibrate, plates, spotting-eval
+│   ├── cli.py          # точка входа: python -m aicoach.cli <команда>; команды: scoreboard, scoreboard-calibrate, plates, spotting-eval, fuse, run
+│   ├── pipeline.py     # команда `run`: scoreboard, plates, fusion по порядку, статус `run` в status.json; модели в ней нет
 │   ├── status.py       # status.json каталога матча: состояние стадий (running, done, failed) и прогресс
 │   ├── stage_common.py # общие помощники стадий: атомарная запись, статус, прогресс, запись сбоя
 │   ├── errors.py       # иерархия исключений
@@ -92,7 +93,13 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 │   │   ├── convert.py      # t_v = frame / fps, соответствие классов (D-043), слияние дублей, порог, отбор по таймам (D-044)
 │   │   ├── evaluation.py   # чистая оценка по порогам поверх `aicoach.eval`, таблица и JSON-словарь
 │   │   └── run.py          # команда `spotting-eval`: чтение файлов, запись `eval_<имя>_half1.json` рядом с входом
-│   ├── ingest/  speech/  fusion/   # план
+│   ├── fusion/         # стадия слияния правилами (D-047): табло, плашки и необязательный файл T-DEED → события в SQLite и `candidates.json`
+│   │   ├── config.py       # `FuseConfig`: все числа правил (стартовые, не подобраны), чтение JSON-файла параметров
+│   │   ├── schemas.py      # pydantic-схема `candidates.json` (версия схемы, события с источником и доказательствами, предупреждения)
+│   │   ├── halves.py       # границы таймов из сегментов часов `scoreboard.json` (эталон не используется)
+│   │   ├── rules.py        # чистые правила: замены, голы, отменённые голы, модельные события, карточка и фол, отбор по таймам
+│   │   └── stage.py        # чтение входов, кэш, запись в БД (`aicoach.db`) и `candidates.json`, защита правок, статус
+│   ├── ingest/  speech/    # план
 │   ├── agent/          # план: инструменты, проверка ссылок, промпты
 │   ├── export/         # план: клипы FFmpeg
 │   └── ui/             # план
@@ -103,7 +110,7 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 
 Каждая стадия: отдельная команда, чистые функции внутри, вход и выход через файл со схемой, пропуск уже готового, идемпотентность (тот же вход даёт тот же выход).
 
-Где лежат результаты. Стадия `scoreboard` принимает видео аргументом `--video` и пишет `scoreboard.json`, `status.json` и образцы цифр `scoreboard_templates/` в каталог этого видео, а не в `data/<match_id>/` (D-030; каталог видео и образцы не попадают в git). Стадия `plates` пишет так же (`plates.json`, `plate_crops/`, `status.json` рядом с видео). Остальные стадии, когда появятся, по плану пишут в каталог матча под `Settings.data_dir`. Состояние стадий читает интерфейс из `status.json`. Промежуточные картинки калибровки лежат только в `scratch/`.
+Где лежат результаты. Стадия `scoreboard` принимает видео аргументом `--video` и пишет `scoreboard.json`, `status.json` и образцы цифр `scoreboard_templates/` в каталог этого видео, а не в `data/<match_id>/` (D-030; каталог видео и образцы не попадают в git). Стадия `plates` пишет так же (`plates.json`, `plate_crops/`, `status.json` рядом с видео). Стадия `fuse` читает `scoreboard.json`, `plates.json` и необязательный файл T-DEED (`--predictions`) и пишет события в SQLite `aicoach.db` и `candidates.json` в тот же каталог (D-047). Остальные стадии, когда появятся, по плану пишут в каталог матча под `Settings.data_dir`. Состояние стадий читает интерфейс из `status.json`. Промежуточные картинки калибровки лежат только в `scratch/`.
 
 ## 5. Доменные инварианты
 
