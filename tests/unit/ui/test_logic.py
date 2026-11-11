@@ -133,12 +133,14 @@ def test_embed_url_negative_start_raises() -> None:
 
 @pytest.mark.unit
 def test_iframe_html_has_referrer_policy_and_changes_with_nonce() -> None:
-    first = iframe_html(VID, 95, autoplay=True, nonce=1, height=380)
-    second = iframe_html(VID, 95, autoplay=True, nonce=2, height=380)
+    first = iframe_html(VID, 95, autoplay=True, nonce=1)
+    second = iframe_html(VID, 95, autoplay=True, nonce=2)
 
     assert 'referrerpolicy="strict-origin-when-cross-origin"' in first
     assert f"https://www.youtube.com/embed/{VID}?start=95&autoplay=1&enablejsapi=1" in first
-    assert 'height="380"' in first
+    assert "padding-top: 56.25%" in first  # 16:9 at any width, no fixed height
+    assert 'height="' not in first.split("<style>")[1].split("</style>")[1].split("<script>")[0]
+    assert "frameElement" in first
     assert first != second
 
 
@@ -234,6 +236,22 @@ def test_to_row_unknown_status_is_shown_as_is_and_away_team_is_guests() -> None:
 
     assert row.type_text == "Гол (odd)"
     assert row.team_text == "гости"
+
+
+@pytest.mark.unit
+def test_details_text_joins_known_parts() -> None:
+    row = to_row(make_event(half=2, score=0.8, source="merge", team="away"))
+
+    assert row.details_text == "2-й тайм · уверенность 0.80 · модель и плашка · гости"
+
+
+@pytest.mark.unit
+def test_details_text_leaves_out_unknown_parts_and_never_empty() -> None:
+    user = to_row(make_event(half=None, score=None, source=None, team=None))
+    plate = to_row(make_event(half=1, score=None, source="plates", team=None))
+
+    assert user.details_text == "—"
+    assert plate.details_text == "1-й тайм · табло и плашки"
 
 
 @pytest.mark.unit

@@ -26,8 +26,10 @@ from aicoach.ui.logic import (
     youtube_link,
 )
 
-LIST_HEIGHT_PX = 620
-PLAYER_HEIGHT_PX = 380
+# The page gives the player frame this height until the frame fits itself to the 16:9 width;
+# the list is as tall as the player plus the line above it and the link below it.
+PLAYER_HEIGHT_PX = 540
+LIST_HEIGHT_PX = PLAYER_HEIGHT_PX + 90
 _SELECTED = "selected_row"
 _CLICKS = "play_clicks"
 _HALF_OPTIONS: list[HalfFilter] = [None, 1, 2]
@@ -61,24 +63,19 @@ def _sidebar(events: list[CurrentEvent]) -> tuple[EventFilter, str]:
 
 
 def _render_list(rows: list[EventRow]) -> None:
-    widths = [1, 2, 3, 1, 2, 3, 2]
     with st.container(height=LIST_HEIGHT_PX):
-        header = st.columns(widths)
-        names = ("", ru.COLUMN_TIME, ru.COLUMN_TYPE, ru.COLUMN_HALF, ru.COLUMN_SCORE)
-        for col, name in zip(header, (*names, ru.COLUMN_SOURCE, ru.COLUMN_TEAM), strict=True):
-            col.markdown(f"**{name}**" if name else "")
         for row in rows:
-            cols = st.columns(widths)
-            cols[0].button(
+            play, when, what = st.columns([1, 2, 4], vertical_alignment="center")
+            play.button(
                 ru.PLAY_BUTTON,
                 key=f"play_{row.event_id}",
                 help=ru.PLAY_HELP,
                 on_click=_select,
                 args=(row,),
             )
-            texts = (row.time_text, row.type_text, row.half_text, row.score_text)
-            for col, text in zip(cols[1:], (*texts, row.source_text, row.team_text), strict=True):
-                col.write(text)
+            when.markdown(f"**{row.time_text}**")
+            what.write(row.type_text)
+            st.caption(row.details_text)
 
 
 def _render_player(args: AppArgs, variant: str) -> None:
@@ -95,9 +92,8 @@ def _render_player(args: AppArgs, variant: str) -> None:
             start,
             autoplay=autoplay,
             nonce=st.session_state.get(_CLICKS, 0),
-            height=PLAYER_HEIGHT_PX,
         )
-        components.html(html, height=PLAYER_HEIGHT_PX + 10)
+        components.html(html, height=PLAYER_HEIGHT_PX)
     else:
         st.video(watch_url(args.youtube_id), start_time=start, autoplay=autoplay)
     link = (
@@ -130,15 +126,15 @@ def main() -> None:
 
     flt, variant = _sidebar(events)
     shown = filter_events(events, flt)
-    list_col, player_col = st.columns([3, 2])
+    player_col, list_col = st.columns([3, 1.3])
+    with player_col:
+        _render_player(args, variant)
     with list_col:
         st.caption(ru.SHOWN.format(shown=len(shown), total=len(events)))
         if shown:
             _render_list(to_rows(shown))
         else:
             st.info(ru.NOTHING_MATCHES)
-    with player_col:
-        _render_player(args, variant)
 
 
 main()

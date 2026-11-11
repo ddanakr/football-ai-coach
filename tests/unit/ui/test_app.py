@@ -94,7 +94,7 @@ def test_app_lists_all_events_and_shows_the_start_of_the_video(
     text = markdown_text(app)
     assert f"https://www.youtube.com/watch?v={VID}" in text
     assert "&t=" not in text
-    assert app.caption[0].value == ru.SHOWN.format(shown=5, total=5)
+    assert ru.SHOWN.format(shown=5, total=5) in [c.value for c in app.caption]
 
 
 @pytest.mark.unit
