@@ -15,8 +15,8 @@
 
 ## 2. Покрытие
 
-- **Не ниже 80%** (по строкам и ветвям) для модулей обработки данных и ML-пайплайнов: `domain`, `ingest`, `scoreboard`, `spotting`, `speech`, `fusion`, `storage`, `agent`, `eval`, `export`.
-- Из расчёта исключены `ui/`, `cli.py` и тонкие обёртки, которые только вызывают стороннюю модель. Логика (разбор, нормализация, пороги, решения) выносится в чистые функции, и они покрываются в полном объёме.
+- **Не ниже 80%** (по строкам и ветвям) для модулей обработки данных и ML-пайплайнов: `domain`, `ingest`, `scoreboard`, `spotting`, `speech`, `fusion`, `storage`, `agent`, `eval`, `export`, `ui` (кроме `app.py`).
+- Из расчёта исключены `ui/app.py` (тонкий скрипт Streamlit, проверяется смоук-тестами `AppTest`), `cli.py` и тонкие обёртки, которые только вызывают стороннюю модель. Логика (разбор, нормализация, пороги, решения) выносится в чистые функции, и они покрываются в полном объёме.
 - `# pragma: no cover` допустим только на строках, которые вызывают настоящую модель или внешний сервис, и только с комментарием-причиной.
 - Падение покрытия ниже порога ломает `python scripts/check.py`. Занижать порог или расширять исключения ради прохождения запрещено.
 
@@ -37,7 +37,7 @@ markers = [
 [tool.coverage.run]
 source = ["src/aicoach"]
 branch = true
-omit = ["src/aicoach/ui/*", "src/aicoach/cli.py", "*/__main__.py"]
+omit = ["src/aicoach/ui/app.py", "src/aicoach/cli.py", "*/__main__.py"]
 
 [tool.coverage.report]
 fail_under = 80
@@ -171,6 +171,7 @@ tests/
 ├── fixtures/                    # только синтетика
 │   ├── factories.py             # фабрики событий, плашек, реплик
 │   ├── scoreboard_synth.py      # кадры табло, нарисованные OpenCV
+│   ├── ui_synth.py              # события и маленькая база для тестов интерфейса
 │   ├── fusion_synth.py          # плашки, plates.json и входные файлы стадии fuse без картинок, файл T-DEED
 │   ├── pipeline_fakes.py        # тестовые функции стадий для команды run: записывают вызовы, могут падать
 │   ├── transcripts/             # маленькие JSON
@@ -183,6 +184,7 @@ tests/
 │   ├── spotting/     test_schemas.py   test_convert.py   test_evaluation.py   test_cli.py
 │   ├── speech/       test_lexicon.py        test_language_routing.py   test_name_normalization.py
 │   ├── fusion/       test_config_and_halves.py   test_rules.py   test_stage.py   test_pipeline.py   test_cli.py   # test_replay_suppression.py: план, детектор повторов (D-032)
+│   ├── ui/           test_logic.py   test_launch_and_data.py   test_cli.py   test_app.py   # test_app.py: AppTest, помечен allow_hosts для loopback (цикл asyncio на Windows)
 │   ├── eval/         test_matching.py       test_metrics.py            test_bootstrap.py
 │   ├── storage/      test_edits_log.py      test_events_view.py
 │   ├── agent/        test_tools.py          test_citation_validator.py
@@ -199,6 +201,7 @@ tests/
 │   └── test_config_files.py                 # configs/*.yaml валидны, пороги в допустимых диапазонах
 └── real_data/                               # @real_data: пропускается без AICOACH_REAL_MATCH_VIDEO
     ├── test_scoreboard_known_pairs.py       # scoreboard.json реального матча против двух пар владельца
+    ├── test_ui_real_events.py               # чтение и форматирование событий из реального aicoach.db рядом с видео
     └── test_plates_reference.py             # plates.json против контрольных времён владельца (plates_reference.json рядом с видео)
 ```
 

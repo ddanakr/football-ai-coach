@@ -13,10 +13,8 @@ from aicoach.ui.logic import (
     EventFilter,
     EventRow,
     available_types,
-    embed_url,
     filter_events,
     format_mmss,
-    iframe_html,
     player_start,
     selected_row,
     table_records,
@@ -118,33 +116,6 @@ def test_video_id_starting_with_a_dash_is_valid() -> None:
 @pytest.mark.unit
 def test_watch_url_has_no_time() -> None:
     assert watch_url(VID) == f"https://www.youtube.com/watch?v={VID}"
-
-
-@pytest.mark.unit
-def test_embed_url_carries_start_autoplay_and_jsapi() -> None:
-    assert embed_url(VID, 95, autoplay=True) == (
-        f"https://www.youtube.com/embed/{VID}?start=95&autoplay=1&enablejsapi=1"
-    )
-    assert "autoplay=0" in embed_url(VID, 0, autoplay=False)
-
-
-@pytest.mark.unit
-def test_embed_url_negative_start_raises() -> None:
-    with pytest.raises(ValueError, match="start_s"):
-        embed_url(VID, -1, autoplay=True)
-
-
-@pytest.mark.unit
-def test_iframe_html_has_referrer_policy_and_changes_with_nonce() -> None:
-    first = iframe_html(VID, 95, autoplay=True, nonce=1)
-    second = iframe_html(VID, 95, autoplay=True, nonce=2)
-
-    assert 'referrerpolicy="strict-origin-when-cross-origin"' in first
-    assert f"https://www.youtube.com/embed/{VID}?start=95&autoplay=1&enablejsapi=1" in first
-    assert "padding-top: 56.25%" in first  # 16:9 at any width, no fixed height
-    assert 'height="' not in first.split("<style>")[1].split("</style>")[1].split("<script>")[0]
-    assert "frameElement" in first
-    assert first != second
 
 
 @pytest.mark.unit

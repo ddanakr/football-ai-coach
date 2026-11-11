@@ -166,22 +166,39 @@ def test_picking_another_row_moves_the_link(
 
 
 @pytest.mark.unit
-def test_player_variant_st_video_starts_at_the_picked_event(
+def test_player_is_st_video_and_starts_at_the_picked_event(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     db = tmp_path / "e.db"
     write_events_db(db)
     app = run_app(monkeypatch, db)
+    assert len(app.sidebar.radio) == 1  # only the half filter: no player switch
 
-    app.sidebar.radio[0].set_value(ru.PLAYER_ST_VIDEO).run()
     pick_row(app, 2)
 
     assert not app.exception
-    assert "&t=1195s" in markdown_text(app)
+    (video,) = app.get("video")
+    assert video.proto.start_time == 1195
+    assert video.proto.autoplay
+    assert VID in video.proto.url  # Streamlit turns the watch URL into its embed form
 
 
 @pytest.mark.unit
-def test_changing_the_variant_keeps_the_picked_event(
+def test_before_any_pick_the_player_starts_at_zero_without_autoplay(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    db = tmp_path / "e.db"
+    write_events_db(db)
+
+    app = run_app(monkeypatch, db)
+
+    (video,) = app.get("video")
+    assert video.proto.start_time == 0
+    assert not video.proto.autoplay
+
+
+@pytest.mark.unit
+def test_changing_a_filter_keeps_the_picked_event(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     db = tmp_path / "e.db"
@@ -189,7 +206,7 @@ def test_changing_the_variant_keeps_the_picked_event(
     app = run_app(monkeypatch, db)
     pick_row(app, 1)
 
-    app.sidebar.radio[0].set_value(ru.PLAYER_ST_VIDEO).run()
+    app.sidebar.slider[0].set_value(0.1).run()
 
     assert "&t=895s" in markdown_text(app)
 
@@ -200,13 +217,13 @@ def test_filter_by_type_and_half_and_score(monkeypatch: pytest.MonkeyPatch, tmp_
     write_events_db(db)
     app = run_app(monkeypatch, db)
 
-    app.sidebar.radio[1].set_value(2).run()
+    app.sidebar.radio[0].set_value(2).run()
     assert table_rows(app) == 2  # the corner and the substitution of the second half
 
     app.sidebar.slider[0].set_value(0.7).run()
     assert table_rows(app) == 1  # the corner (0.60) is below, the substitution has no score
 
-    app.sidebar.radio[1].set_value(None).run()
+    app.sidebar.radio[0].set_value(None).run()
     app.sidebar.multiselect[0].set_value(["goal", "shot"]).run()
     assert table_rows(app) == 1
 
@@ -218,7 +235,7 @@ def test_pick_after_filtering_maps_to_the_filtered_row(
     db = tmp_path / "e.db"
     write_events_db(db)
     app = run_app(monkeypatch, db)
-    app.sidebar.radio[1].set_value(2).run()
+    app.sidebar.radio[0].set_value(2).run()
 
     pick_row(app, 1)  # second row of the filtered table: the substitution at 4300 s
 

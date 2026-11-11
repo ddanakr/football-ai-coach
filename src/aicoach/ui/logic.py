@@ -20,32 +20,6 @@ PLAYER_PRE_ROLL_S = 5.0
 
 _VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}")
 _WATCH_URL = "https://www.youtube.com/watch?v={video_id}"
-# The wrapper keeps 16:9 at any width (padding-top is a share of the width). The script makes the
-# component frame as tall as the wrapper; where the frame is not reachable, the fixed height that
-# the page gave to the component stays.
-_IFRAME = """<style>
-html, body {{ margin: 0; padding: 0; background: transparent; }}
-.wrap {{ position: relative; width: 100%; padding-top: 56.25%; }}
-.wrap iframe {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }}
-</style>
-<div class="wrap" data-click="{nonce}">
-<iframe src="{src}" title="YouTube player"
- allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
- referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-</div>
-<script>
-(function () {{
-  var wrap = document.querySelector(".wrap");
-  function fit() {{
-    try {{
-      if (window.frameElement) {{ window.frameElement.style.height = wrap.offsetHeight + "px"; }}
-    }} catch (err) {{ /* cross-origin frame: keep the fixed height */ }}
-  }}
-  fit();
-  window.addEventListener("resize", fit);
-}})();
-</script>"""
-
 HalfFilter = Literal[1, 2] | None
 
 
@@ -110,34 +84,6 @@ def watch_url(video_id: str) -> str:
         ConfigError: Bad video id.
     """
     return _WATCH_URL.format(video_id=validate_video_id(video_id))
-
-
-def embed_url(video_id: str, start_s: int, *, autoplay: bool) -> str:
-    """Embed URL of the player that starts at `start_s` seconds.
-
-    Raises:
-        ConfigError: Bad video id.
-        ValueError: `start_s` is negative.
-    """
-    if start_s < 0:
-        msg = f"start_s must not be negative, got {start_s}"
-        raise ValueError(msg)
-    return (
-        f"https://www.youtube.com/embed/{validate_video_id(video_id)}"
-        f"?start={start_s}&autoplay={int(autoplay)}&enablejsapi=1"
-    )
-
-
-def iframe_html(video_id: str, start_s: int, *, autoplay: bool, nonce: int) -> str:
-    """HTML of the embedded player, 16:9 at any width. `nonce` changes the text on every
-    click, so the player is rebuilt (and restarts) even when the same event is chosen twice.
-
-    Raises:
-        ConfigError: Bad video id.
-        ValueError: `start_s` is negative.
-    """
-    src = embed_url(video_id, start_s, autoplay=autoplay)
-    return _IFRAME.format(nonce=nonce, src=src)
 
 
 @dataclass(frozen=True)
