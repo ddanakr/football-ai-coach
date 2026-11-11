@@ -1,4 +1,5 @@
-"""Parameters of the fusion rules. Every default is a starting value, not tuned on data.
+"""Parameters of the fusion rules. Every default is a starting value, not tuned on data,
+except the corner threshold (D-053).
 
 All numbers of the rules live here (CLAUDE.md section 6), not in the rule code. Thresholds and
 windows are to be chosen on the first half only (D-008); until then the values below are guesses
@@ -18,6 +19,10 @@ ModelClass = Literal["shot", "corner", "foul"]
 MODEL_CLASSES: tuple[ModelClass, ...] = ("shot", "corner", "foul")
 
 
+def _default_thresholds() -> dict[ModelClass, float]:
+    return {"shot": 0.2, "corner": 0.05, "foul": 0.2}
+
+
 class FuseConfig(BaseModel):
     """Parameters of the rules; all defaults are "starting, not tuned" (D-047)."""
 
@@ -31,21 +36,23 @@ class FuseConfig(BaseModel):
     goal_plate_only_lead_s: _Seconds = 30.0
     goal_plate_only_score: _Score = 0.5
 
-    # Model events: only these classes, each with its own confidence threshold.
-    model_thresholds: dict[ModelClass, _Score] = Field(
-        default_factory=lambda: dict.fromkeys(MODEL_CLASSES, 0.2)
-    )
+    # Model events: only these classes, each with its own confidence threshold. The corner value
+    # is chosen on half 1 of one match (D-053, 4 corners: 4 of 4 found at 0.05 against 2 at 0.2);
+    # shot and foul kept the starting 0.2 (no gain of 2 true positives on the grid).
+    model_thresholds: dict[ModelClass, _Score] = Field(default_factory=_default_thresholds)
     model_fps: Annotated[float, Field(gt=0, allow_inf_nan=False)] = 25.0
     merge_radius_s: _Seconds = 3.0
     # A model shot this close to a goal is the goal itself (one mark per goal by the protocol).
     shot_goal_radius_s: _Seconds = 10.0
 
     # Card plate: a model foul in [plate - before, plate + after] is lifted; otherwise a foul
-    # is added `lead` seconds before the plate (one observation: the plate came 12 s late).
+    # is added `lead` seconds before the plate. The 22 s is measured, not tuned on the metric: on
+    # 3 card plates of half 1 of one match the nearest earlier foul lies 17.7-25.9 s before the
+    # plate (D-053).
     card_foul_window_before_s: _Seconds = 40.0
     card_foul_window_after_s: _Seconds = 5.0
     card_foul_boost_score: _Score = 0.9
-    card_foul_lead_s: _Seconds = 12.0
+    card_foul_lead_s: _Seconds = 22.0
     card_foul_plate_only_score: _Score = 0.5
 
     # Half bounds come from the clock segments of scoreboard.json: the first clock reading of a
