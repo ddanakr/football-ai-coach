@@ -35,7 +35,7 @@ def test_config_defaults_use_the_starting_values() -> None:
     assert config.card_foul_window_after_s == 5.0
     assert config.card_foul_lead_s == 12.0
     assert config.merge_radius_s == 3.0
-    assert config.model_thresholds == {"shot": 0.2, "corner": 0.2, "foul": 0.2}
+    assert config.model_thresholds == {"shot": 0.2, "corner": 0.05, "foul": 0.2}
 
 
 @pytest.mark.unit

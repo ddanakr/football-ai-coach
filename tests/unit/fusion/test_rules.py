@@ -208,6 +208,19 @@ def test_model_events_below_their_class_threshold_are_dropped() -> None:
 
 
 @pytest.mark.unit
+def test_default_config_keeps_a_weak_corner_but_not_a_weak_shot_or_foul() -> None:
+    model = [
+        make_pred("corner", 300.0, score=0.05),
+        make_pred("shot", 400.0, score=0.1),
+        make_pred("foul", 500.0, score=0.1),
+    ]
+
+    out = run(model=model)
+
+    assert [(c.type, c.t_v) for c in out.candidates] == [(EventType.CORNER, 300.0)]
+
+
+@pytest.mark.unit
 def test_model_event_without_score_is_dropped() -> None:
     assert run(model=[make_pred("shot", 300.0)]).candidates == []
 
