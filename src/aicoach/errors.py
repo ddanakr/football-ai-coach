@@ -23,3 +23,7 @@ class ConfigError(AicoachError):
 
 class PlatesError(AicoachError):
     """The plates stage cannot continue: no scoreboard.json, mismatched decode mode, bad input."""
+
+
+class SpottingError(AicoachError):
+    """Invalid input to the spotting adapter: a broken T-DEED file or a bad parameter."""

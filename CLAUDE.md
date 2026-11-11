@@ -31,7 +31,7 @@ Football AI Coach превращает запись матча КПЛ в кат�
 | Язык | Python 3.11 (допущение, подтвердить при создании окружения) |
 | Загрузка и медиа | `yt-dlp`, FFmpeg |
 | Признаки кадров (ветка A) | ResNet-152 через экстрактор SoccerNet DevKit (TensorFlow 2, отдельное окружение) |
-| Модель событий | ветка A: NetVLAD++ (PyTorch, из `sn-spotting`); ветка B: T-DEED (GPL-3.0, код изолирован в `spotting/branch_b/`) |
+| Модель событий | ветка A: NetVLAD++ (PyTorch, из `sn-spotting`); ветка B: T-DEED (GPL-3.0): неизменённый `inference.py` запускается отдельным процессом в Colab, код T-DEED в репозиторий не копируется и не импортируется; в репозитории только адаптер его JSON-файла в `spotting/` (D-042, D-046) |
 | Табло и плашки | детекция по форме и цвету, OCR с казахским языком или vision-модель по вырезанным кадрам |
 | Речь | VAD, `faster-whisper large-v3`, языки только `ru` и `kk`, лексикон (`pymorphy3` для русского) |
 | Данные и схемы | `pydantic` v2, `pydantic-settings` |
@@ -64,7 +64,7 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 ├── configs/            # план: пороги, окна NMS, лексиконы, шаблоны плашек (yaml); пока пороги лежат в pydantic-моделях стадий (D-031)
 ├── docs/               # TZ.md; протокол разметки
 ├── src/aicoach/
-│   ├── cli.py          # точка входа: python -m aicoach.cli <команда>; команды: scoreboard, scoreboard-calibrate, plates
+│   ├── cli.py          # точка входа: python -m aicoach.cli <команда>; команды: scoreboard, scoreboard-calibrate, plates, spotting-eval
 │   ├── status.py       # status.json каталога матча: состояние стадий (running, done, failed) и прогресс
 │   ├── stage_common.py # общие помощники стадий: атомарная запись, статус, прогресс, запись сбоя
 │   ├── errors.py       # иерархия исключений
@@ -87,7 +87,12 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 │   │   └── config.py  schemas.py   # пороги и окна; pydantic-модели plates.json
 │   ├── storage/        # SQLite-хранилище событий: db.py, schema.py, models.py, repository.py (миграций нет, версия схемы 1)
 │   ├── eval/           # сопоставление, метрики, bootstrap, схемы входа, отчёт в Markdown
-│   ├── ingest/  spotting/  speech/  fusion/   # план
+│   ├── spotting/       # адаптер предсказаний ветки B: файл T-DEED (код T-DEED не копируется, D-046), только 1-й тайм (D-045)
+│   │   ├── schemas.py      # pydantic-схема JSON T-DEED (17 классов) и загрузка (`SpottingError`)
+│   │   ├── convert.py      # t_v = frame / fps, соответствие классов (D-043), слияние дублей, порог, отбор по таймам (D-044)
+│   │   ├── evaluation.py   # чистая оценка по порогам поверх `aicoach.eval`, таблица и JSON-словарь
+│   │   └── run.py          # команда `spotting-eval`: чтение файлов, запись `eval_<имя>_half1.json` рядом с входом
+│   ├── ingest/  speech/  fusion/   # план
 │   ├── agent/          # план: инструменты, проверка ссылок, промпты
 │   ├── export/         # план: клипы FFmpeg
 │   └── ui/             # план
