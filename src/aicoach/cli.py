@@ -13,7 +13,12 @@ from typing import TypeVar
 from pydantic import ValidationError
 
 from aicoach.errors import AicoachError, ConfigError
+from aicoach.fusion.config import load_fuse_config
+from aicoach.fusion.rules import count_events
+from aicoach.fusion.schemas import CandidatesResult
+from aicoach.fusion.stage import run_fuse
 from aicoach.logging_setup import configure_logging
+from aicoach.pipeline import run_pipeline
 from aicoach.plates.config import PlatesConfig
 from aicoach.plates.stage import run_plates
 from aicoach.scoreboard.config import ScoreboardConfig
@@ -53,6 +58,16 @@ def build_parser() -> argparse.ArgumentParser:
     plates.add_argument("--sample-fps", type=float, help="frames per second to read (default 2)")
     plates.add_argument("--cpu", action="store_true", help="decode on the CPU (very slow for AV1)")
 
+    fuse = commands.add_parser(
+        "fuse", help="merge scoreboard, plates and model events into the database"
+    )
+    _add_fuse_options(fuse)
+    fuse.add_argument("--db", type=Path, help="database file (default: aicoach.db by the video)")
+
+    run = commands.add_parser("run", help="scoreboard, plates and fuse in order (no model)")
+    run.add_argument("--cpu", action="store_true", help="decode on the CPU (very slow for AV1)")
+    _add_fuse_options(run, force_help="recompute all three stages (reads the video twice, slow)")
+
     calib = commands.add_parser(
         "scoreboard-calibrate", help="cut digit templates from the broadcast (two steps)"
     )
@@ -90,6 +105,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     spot.add_argument("--output", type=Path, help="default: eval_<name>_half1.json next to input")
     return parser
+
+
+def _add_fuse_options(
+    parser: argparse.ArgumentParser, force_help: str = "ignore an up-to-date result"
+) -> None:
+    """Options shared by `fuse` and `run`."""
+    parser.add_argument("--video", type=Path, required=True, help="path of the match video")
+    parser.add_argument("--match-id", help="default: name of the video's directory")
+    parser.add_argument(
+        "--predictions", type=Path, help="T-DEED results JSON; without it only the graphics count"
+    )
+    parser.add_argument("--config", type=Path, help="JSON with FuseConfig fields to override")
+    parser.add_argument("--force", action="store_true", help=force_help)
+    parser.add_argument(
+        "--discard-edits",
+        action="store_true",
+        help="allow a new run although the match has user edits (they leave the current view)",
+    )
 
 
 def _match_id(args: argparse.Namespace) -> str:
@@ -133,6 +166,52 @@ def _plates(args: argparse.Namespace) -> int:
         f"rejected candidates, {len(result.logo_clusters)} logo clusters, "
         f"{result.stats.n_low_conf} low-confidence, decode mode {result.decode_mode}\n"
     )
+    return 0
+
+
+def _report_fusion(result: CandidatesResult) -> None:
+    counts = ", ".join(
+        f"{kind} {sum(by_half.values())} (1st half {by_half.get('1', 0)}, "
+        f"2nd half {by_half.get('2', 0)})"
+        for kind, by_half in sorted(count_events(result.candidates).items())
+    )
+    sys.stdout.write(
+        f"candidates.json: {counts or 'no events'}; mode {result.mode}; run {result.run_id}; "
+        f"{len(result.dropped)} dropped, {len(result.warnings)} warning(s)\n"
+    )
+    for text in result.warnings:
+        sys.stdout.write(f"  warning: {text}\n")
+
+
+def _fuse(args: argparse.Namespace) -> int:
+    result = run_fuse(
+        args.video.parent,
+        _match_id(args),
+        args.predictions,
+        load_fuse_config(args.config),
+        force=args.force,
+        discard_edits=args.discard_edits,
+        db_path=args.db,
+    )
+    _report_fusion(result)
+    return 0
+
+
+def _run(args: argparse.Namespace) -> int:
+    done = run_pipeline(
+        args.video,
+        _match_id(args),
+        predictions_path=args.predictions,
+        fuse_config=load_fuse_config(args.config),
+        force=args.force,
+        hw_accel=not args.cpu,
+        discard_edits=args.discard_edits,
+    )
+    sys.stdout.write(
+        f"scoreboard: {len(done.scoreboard.score_changes)} score changes; "
+        f"plates: {len(done.plates.plates)}\n"
+    )
+    _report_fusion(done.fusion)
     return 0
 
 
@@ -184,6 +263,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _plates(args)
         if args.command == "spotting-eval":
             return _spotting_eval(args)
+        if args.command == "fuse":
+            return _fuse(args)
+        if args.command == "run":
+            return _run(args)
         return _calibrate(args)
     except AicoachError as err:
         sys.stderr.write(f"error: {err}\n")
