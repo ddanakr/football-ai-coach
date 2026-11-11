@@ -27,3 +27,7 @@ class PlatesError(AicoachError):
 
 class SpottingError(AicoachError):
     """Invalid input to the spotting adapter: a broken T-DEED file or a bad parameter."""
+
+
+class FusionError(AicoachError):
+    """The fusion stage cannot continue: missing or stale inputs, no half bounds, lost edits."""
