@@ -178,7 +178,7 @@ tests/
 │   ├── test_stage_common.py                 # общие помощники стадий: атомарная запись, статус, прогресс
 │   ├── scoreboard/   test_clock_parser.py   test_score_history.py   test_plate_parser.py
 │   ├── plates/       test_detect.py   test_tracks.py   test_logos.py   test_teams.py   test_assemble.py   test_stage.py   test_cli.py
-│   ├── spotting/     test_nms.py            test_peaks.py
+│   ├── spotting/     test_schemas.py   test_convert.py   test_evaluation.py   test_cli.py
 │   ├── speech/       test_lexicon.py        test_language_routing.py   test_name_normalization.py
 │   ├── fusion/       test_rules.py          test_replay_suppression.py
 │   ├── eval/         test_matching.py       test_metrics.py            test_bootstrap.py

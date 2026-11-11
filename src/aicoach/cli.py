@@ -23,6 +23,9 @@ from aicoach.scoreboard.stage import (
     run_labelling,
     run_scoreboard,
 )
+from aicoach.spotting.convert import DEFAULT_FPS, DEFAULT_MERGE_RADIUS_S
+from aicoach.spotting.evaluation import DEFAULT_THRESHOLDS, DEVELOPMENT_HALF, format_evaluation
+from aicoach.spotting.run import DEFAULT_GROUND_TRUTH, run_spotting_eval
 
 _DEFAULT_WORKDIR_ROOT = Path("scratch")
 _Config = TypeVar("_Config", ScoreboardConfig, PlatesConfig)
@@ -59,6 +62,33 @@ def build_parser() -> argparse.ArgumentParser:
     calib.add_argument("--labels", type=Path, help="step 2: labels file, makes the templates")
     calib.add_argument("--step-s", type=float, help="seconds between sampled frames (default 5)")
     calib.add_argument("--cpu", action="store_true", help="decode on the CPU (very slow for AV1)")
+
+    spot = commands.add_parser(
+        "spotting-eval", help="evaluate a T-DEED output file on the first half (D-045)"
+    )
+    spot.add_argument("--predictions", type=Path, required=True, help="T-DEED results JSON")
+    spot.add_argument(
+        "--ground-truth", type=Path, default=DEFAULT_GROUND_TRUTH, help="default: %(default)s"
+    )
+    spot.add_argument(
+        "--half", type=int, default=DEVELOPMENT_HALF, help="1 only; half 2 is reserved"
+    )
+    spot.add_argument(
+        "--thresholds",
+        type=float,
+        nargs="+",
+        default=list(DEFAULT_THRESHOLDS),
+        help="confidence thresholds (default: %(default)s); values below the threshold of "
+        "T-DEED's own inference.py (default 0.2) add nothing",
+    )
+    spot.add_argument("--fps", type=float, default=DEFAULT_FPS, help="frame rate of `frame`")
+    spot.add_argument(
+        "--radius-s",
+        type=float,
+        default=DEFAULT_MERGE_RADIUS_S,
+        help="merge radius for duplicates, seconds (default: %(default)s)",
+    )
+    spot.add_argument("--output", type=Path, help="default: eval_<name>_half1.json next to input")
     return parser
 
 
@@ -128,6 +158,21 @@ def _calibrate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _spotting_eval(args: argparse.Namespace) -> int:
+    evaluation, written = run_spotting_eval(
+        args.predictions,
+        args.ground_truth,
+        output_path=args.output,
+        half=args.half,
+        thresholds=args.thresholds,
+        fps=args.fps,
+        radius_s=args.radius_s,
+    )
+    sys.stdout.write(format_evaluation(evaluation))
+    sys.stdout.write(f"\nresult: {written}\n")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run a command; returns the process exit code (0 ok, 2 on a handled error)."""
     args = build_parser().parse_args(argv)
@@ -137,6 +182,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _scoreboard(args)
         if args.command == "plates":
             return _plates(args)
+        if args.command == "spotting-eval":
+            return _spotting_eval(args)
         return _calibrate(args)
     except AicoachError as err:
         sys.stderr.write(f"error: {err}\n")
