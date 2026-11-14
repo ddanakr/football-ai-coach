@@ -6,7 +6,13 @@
   "permissions": {
     "deny": [
       "Read(./.env)",
-      "Edit(./.env)"
+      "Edit(./.env)",
+      "Write(./.env)",
+      "Read(./**/*.env)",
+      "Edit(./**/*.env)",
+      "Write(./**/*.env)",
+      "Bash(cat *.env)",
+      "Bash(type *.env)"
     ]
   }
 }
