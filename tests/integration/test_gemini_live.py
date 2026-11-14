@@ -17,9 +17,12 @@ pytestmark = [pytest.mark.live_llm, pytest.mark.enable_socket]
 
 
 @pytest.mark.skipif(os.environ.get("AICOACH_LIVE_LLM") != "1", reason="AICOACH_LIVE_LLM is not 1")
-def test_real_gemini_answers_a_plain_question_and_calls_a_tool_when_asked() -> None:
-    # The autouse fixture hides the developer's settings; the live test reads the real ones.
-    settings = load_settings(env_file=None)
+def test_real_gemini_answers_a_plain_question_and_calls_a_tool_when_asked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The autouse fixture hides the developer's settings; the live test needs the real ones.
+    monkeypatch.undo()
+    settings = load_settings()
     client = GeminiClient(settings.require_gemini_api_key(), settings.gemini_model)
 
     turn = client.generate(

@@ -107,7 +107,7 @@ def _read_bounds(
         duration = ScoreboardResult.model_validate_json(
             board.read_text(encoding="utf-8")
         ).stats.video_duration_s
-    except (OSError, ValidationError) as err:
+    except (OSError, ValueError) as err:  # ValueError: bad JSON, bad schema, bad bytes
         logger.warning(
             "time_bounds_unavailable",
             stage="ui",

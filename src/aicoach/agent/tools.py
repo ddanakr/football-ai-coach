@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal  # Any: JSON for and from the model
 
+import structlog
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from aicoach.agent.context import EventFacts, MatchContext
@@ -21,6 +22,8 @@ from aicoach.agent.names import name_matches
 from aicoach.clips import DEFAULT_AFTER_S, DEFAULT_BEFORE_S
 from aicoach.domain.events import EventType
 from aicoach.errors import ExportError
+
+logger = structlog.get_logger()
 
 DEFAULT_LIMIT = 20
 MAX_LIMIT = 50
@@ -303,18 +306,25 @@ class ToolBox:
         a = FindPlayerArgs.model_validate(args)
         if a.query is None and a.number is None:
             return {"error": "нужна фамилия (query) или номер (number)"}
+        notes: list[str] = []
         if self.ctx.has_lineup:
-            players = self._players_from_lineup(a)
+            players, total = self._players_from_lineup(a)
         elif a.query is None:
             return {"error": "номер можно искать только при наличии состава команд"}
         else:
-            players = self._players_from_plates(a.query, a.side)
+            players, total = self._players_from_plates(a.query, a.side)
+            if a.number is not None:
+                notes.append("номер не учтён: состава команд нет")
         result: Result = {"players": players, "lineup_available": self.ctx.has_lineup}
-        if not players:
-            result["note"] = "игрок не найден"
+        if total > len(players):
+            notes.append(f"подошло игроков: {total}, показаны первые {len(players)}")
+        if not total:
+            notes.append("игрок не найден")
+        if notes:
+            result["note"] = "; ".join(notes)
         return result
 
-    def _players_from_lineup(self, a: FindPlayerArgs) -> list[Result]:
+    def _players_from_lineup(self, a: FindPlayerArgs) -> tuple[list[Result], int]:
         """Up to `MAX_PLAYERS` lineup players that fit; only the returned ones are remembered
         as handed out (the validator allows what the model really saw)."""
         fitting = [
@@ -342,9 +352,9 @@ class ToolBox:
                     "events": events,
                 }
             )
-        return found
+        return found, len(fitting)
 
-    def _players_from_plates(self, query: str, side: str | None) -> list[Result]:
+    def _players_from_plates(self, query: str, side: str | None) -> tuple[list[Result], int]:
         """Without a lineup: the names read from plates that match the query, one per name."""
         grouped: dict[str, list[EventFacts]] = {}
         for facts in self.ctx.events:
@@ -353,7 +363,7 @@ class ToolBox:
             for p in facts.players:
                 if p.name and name_matches(query, p.name):
                     grouped.setdefault(p.name, []).append(facts)
-        return [
+        found: list[Result] = [
             {
                 "name": name,
                 "side": None,
@@ -363,6 +373,7 @@ class ToolBox:
             }
             for name, events in list(grouped.items())[:MAX_PLAYERS]
         ]
+        return found, len(grouped)
 
     def _make_clip(self, args: Mapping[str, Any]) -> Result:
         a = MakeClipArgs.model_validate(args)
@@ -373,7 +384,10 @@ class ToolBox:
         try:
             path = self.clip_maker(a.event_id, a.before_s, a.after_s)
         except ExportError as err:
-            return {"error": f"клип не сделан: {err}"}
+            # The details (paths, FFmpeg output with video times) stay in the log, not in the
+            # model's context.
+            logger.warning("agent_clip_failed", stage="agent", error=str(err))
+            return {"error": "клип не сделан"}
         self.clips.append(ClipMade(a.event_id, path))
         return {
             "event_id": a.event_id,

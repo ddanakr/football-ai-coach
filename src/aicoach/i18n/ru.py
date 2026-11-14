@@ -128,7 +128,6 @@ NO_DATA_ROOT = (
     "Не задан каталог данных: укажите --data-root или AICOACH_DATA_ROOT (переменная окружения "
     "или .env, см. .env.example)."
 )
-INVALID_SETTINGS = "Неверное значение настроек: {fields} (см. .env.example)."
 
 # New match from a YouTube link (D15): the ingest command and the sidebar block.
 TDEED_WAITING = (

@@ -202,3 +202,17 @@ def test_load_context_survives_a_scoreboard_file_with_bad_bytes(tmp_path: Path) 
 
     assert len(ctx.events) == 3
     assert ctx.half_minutes == {}
+
+
+@pytest.mark.unit
+def test_load_context_derives_the_half_of_an_event_added_by_the_user(tmp_path: Path) -> None:
+    from aicoach.storage import add_edit, connect
+
+    db = write_match_dir(tmp_path, "m1")
+    with connect(db) as conn:
+        add_edit(conn, "m1", "add", author="test", type=EventType.SHOT, t_v=300.0)
+
+    added = [f for f in load_context(db, "m1", tmp_path).events if f.event.origin == "user"]
+
+    assert [f.event.half for f in added] == [1]
+    assert added[0].players == ()

@@ -224,3 +224,14 @@ def test_run_questions_a_project_error_other_than_the_service_ends_only_that_que
     assert (summary.first_try, summary.errors) == (1, 1)
     rows = list(csv.DictReader(io.StringIO((tmp_path / "answers.csv").read_text("utf-8-sig"))))
     assert "journal is not writable" in rows[0]["answer"]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("answer", ["=1+1", "+1", "-1", "@cmd"])
+def test_answers_csv_does_not_hand_a_formula_to_the_spreadsheet(
+    tmp_path: Path, answer: str
+) -> None:
+    run(tmp_path, [turn(answer)], n_questions=1)
+
+    rows = list(csv.DictReader(io.StringIO((tmp_path / "answers.csv").read_text("utf-8-sig"))))
+    assert rows[0]["answer"] == "'" + answer

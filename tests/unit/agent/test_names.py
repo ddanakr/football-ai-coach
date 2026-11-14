@@ -13,6 +13,7 @@ from aicoach.agent.names import name_matches, same_word, words
         ("тестова", "тестов", True),
         ("тестов", "тестов", True),
         ("петров", "петренко", False),
+        ("петров", "петровский", False),
         ("иванов", "иванчук", False),
         ("ким", "кима", False),  # short words must be equal
         ("аскар", "аскара", True),

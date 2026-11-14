@@ -127,14 +127,19 @@ def _questions(rows: Iterable[dict[str, str]]) -> list[Question]:
     return found
 
 
+def _safe_cell(text: str) -> str:
+    """A text that a spreadsheet will not run as a formula (a leading `=`, `+`, `-`, `@`)."""
+    return "'" + text if text[:1] in ("=", "+", "-", "@") else text
+
+
 def _row_cells(row: EvalRow) -> list[str]:
     q, a = row.question, row.answer
     head = [q.id, q.type, q.question, q.expected, q.what_we_check]
     if a is None:
-        return [*head, f"ERROR: {row.error}", "error", "0", "", "0", "0", "0", ""]
+        return [*head, _safe_cell(f"ERROR: {row.error}"), "error", "0", "", "0", "0", "0", ""]
     return [
         *head,
-        plain_text(a.segments),
+        _safe_cell(plain_text(a.segments)),
         a.outcome,
         str(a.n_links),
         ";".join(str(c["name"]) for c in a.tool_calls),
@@ -151,7 +156,7 @@ def format_answers(rows: Iterable[EvalRow]) -> str:
     writer = csv.writer(out, lineterminator="\n")
     writer.writerow(ANSWER_COLUMNS)
     writer.writerows(_row_cells(r) for r in rows)
-    return "﻿" + out.getvalue()
+    return "\N{BYTE ORDER MARK}" + out.getvalue()
 
 
 def summarize(rows: list[EvalRow]) -> EvalSummary:

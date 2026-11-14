@@ -279,7 +279,8 @@ def test_make_clip_export_failure_is_an_error_for_the_model_not_a_crash() -> Non
 
     result = box(clip_maker=maker).call("make_clip", {"event_id": "p:2"})
 
-    assert "ffmpeg is missing" in result["error"]
+    # The details (paths, FFmpeg output) go to the log, not to the model.
+    assert result == {"error": "клип не сделан"}
 
 
 @pytest.mark.unit
@@ -312,3 +313,23 @@ def test_find_player_remembers_only_the_players_it_returned() -> None:
     assert len(result["players"]) == 5
     assert tools.seen_event_ids == {f"p:{i}" for i in range(1, 6)}
     assert tools.seen_names == {p.name for p in crowd[:5]}
+
+
+@pytest.mark.unit
+def test_find_player_says_when_more_players_fit_than_are_shown() -> None:
+    firsts = ["Аскар", "Берик", "Ерлан", "Марат", "Нурлан", "Талгат", "Данияр"]
+    crowd = tuple(Player("home", f"Общий {first}", i) for i, first in enumerate(firsts))
+    tools = ToolBox(MatchContext(match_id="m", events=(), has_lineup=True, lineup=crowd))
+
+    result = tools.call("find_player", {"query": "Общий"})
+
+    assert len(result["players"]) == 5
+    assert "подошло игроков: 7" in result["note"]
+
+
+@pytest.mark.unit
+def test_find_player_without_lineup_says_that_the_number_was_not_used() -> None:
+    result = box(lineup=False).call("find_player", {"query": "Тестов", "number": 9})
+
+    assert [p["name"] for p in result["players"]] == ["Тестов Иван"]
+    assert "номер не учтён" in result["note"]

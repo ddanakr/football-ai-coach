@@ -6,6 +6,7 @@ Built on `aicoach.plate_names.text.name_key`, the same key the plate names use, 
 
 from aicoach.plate_names.text import name_key
 
+_MAX_ENDING = 3  # letters a case ending may add to the stem
 _MIN_STEM = 5  # shorter stems join different surnames (Петров, Петренко)
 
 
@@ -24,7 +25,9 @@ def same_word(a: str, b: str) -> bool:
         return True
     shorter = min(len(a), len(b))
     stem = max(_MIN_STEM, shorter - 2)
-    return shorter >= _MIN_STEM and a[:stem] == b[:stem]
+    # A case ending is a few letters: Петров is not Петровский.
+    longer_by_ending = max(len(a), len(b)) - stem <= _MAX_ENDING
+    return shorter >= _MIN_STEM and a[:stem] == b[:stem] and longer_by_ending
 
 
 def name_matches(query: str, full_name: str) -> bool:

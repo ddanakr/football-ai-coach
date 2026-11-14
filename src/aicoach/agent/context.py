@@ -26,6 +26,8 @@ from aicoach.scoreboard.mapping import clock_at
 from aicoach.scoreboard.schemas import OffsetSegment, ScoreboardResult
 from aicoach.scoreboard.stage import RESULT_FILE as SCOREBOARD_FILE
 from aicoach.storage import CurrentEvent, connect, get_current_events
+from aicoach.ui.data import load_time_bounds
+from aicoach.ui.edits import with_derived_half
 
 logger = structlog.get_logger()
 
@@ -204,7 +206,10 @@ def load_context(db_path: Path, match_id: str, match_dir: Path) -> MatchContext:
         msg = f"database {db_path} does not exist"
         raise StorageError(msg)
     with connect(db_path) as conn:
-        events = get_current_events(conn, match_id)
+        stored = get_current_events(conn, match_id)
+    # Edited and added events have no half in the store: derive it as the viewer does.
+    bounds = load_time_bounds(match_dir)
+    events = [with_derived_half(e, bounds) for e in stored]
     max_extrapolation_s = ScoreboardConfig().timeline.max_extrapolation_s
     segments = _segments(match_dir)
     facts = build_facts(events, segments, _players_by_event(match_dir), max_extrapolation_s)
