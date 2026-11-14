@@ -13,6 +13,7 @@ from typing import TypeVar
 
 from pydantic import ValidationError
 
+from aicoach.clips import DEFAULT_AFTER_S, DEFAULT_BEFORE_S, export_event_clip
 from aicoach.errors import AicoachError, ConfigError
 from aicoach.fusion.config import load_fuse_config
 from aicoach.fusion.rules import count_events
@@ -76,6 +77,24 @@ def build_parser() -> argparse.ArgumentParser:
     ui.add_argument("--youtube-id", required=True, help="YouTube id of the same match (11 chars)")
     ui.add_argument("--match-id", help="default: name of the video's directory")
     ui.add_argument("--db", type=Path, help="database file (default: aicoach.db by the video)")
+
+    clip = commands.add_parser("clip", help="cut the clip of one event with FFmpeg (FR-7)")
+    clip.add_argument("--video", type=Path, required=True, help="path of the match video")
+    clip.add_argument("--event-id", required=True, help="event id from events_current, e.g. p:12")
+    clip.add_argument("--match-id", help="default: name of the video's directory")
+    clip.add_argument("--db", type=Path, help="database file (default: aicoach.db by the video)")
+    clip.add_argument(
+        "--before",
+        type=float,
+        default=DEFAULT_BEFORE_S,
+        help=f"seconds before (default: {DEFAULT_BEFORE_S:g})",
+    )
+    clip.add_argument(
+        "--after",
+        type=float,
+        default=DEFAULT_AFTER_S,
+        help=f"seconds after (default: {DEFAULT_AFTER_S:g})",
+    )
 
     calib = commands.add_parser(
         "scoreboard-calibrate", help="cut digit templates from the broadcast (two steps)"
@@ -268,6 +287,7 @@ def _ui(args: argparse.Namespace) -> int:
         match_id=_match_id(args),
         youtube_id=validate_video_id(args.youtube_id),
         match_dir=args.video.parent,
+        video=args.video,
     )
     command = build_streamlit_command(app_args)
     try:
@@ -275,6 +295,19 @@ def _ui(args: argparse.Namespace) -> int:
         return subprocess.run(command, check=False).returncode  # noqa: S603
     except KeyboardInterrupt:
         return 0
+
+
+def _clip(args: argparse.Namespace) -> int:
+    path = export_event_clip(
+        args.db or args.video.parent / DB_FILE,
+        _match_id(args),
+        args.video,
+        args.event_id,
+        args.before,
+        args.after,
+    )
+    sys.stdout.write(f"clip: {path}\n")
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -294,6 +327,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _run(args)
         if args.command == "ui":
             return _ui(args)
+        if args.command == "clip":
+            return _clip(args)
         return _calibrate(args)
     except AicoachError as err:
         sys.stderr.write(f"error: {err}\n")

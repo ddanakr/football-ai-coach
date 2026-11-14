@@ -100,3 +100,18 @@ ERR_NO_BOUNDS = (
     "`python -m aicoach.cli run --video <путь к видео>`."
 )
 HALF_SPAN = "{half}-й тайм {start}–{end}"
+
+CLIP_HEADER = "Клип"
+CLIP_BEFORE = "До, с"
+CLIP_AFTER = "После, с"
+CLIP_EXPORT = "Экспорт клипа"
+CLIP_EXPORT_HELP = (
+    "Вырезает окно вокруг выбранного события из видео матча (FFmpeg, перекодирование). "
+    "Готовый клип с тем же окном берётся с диска без повторной нарезки."
+)
+CLIP_PICK_FIRST = "Выберите событие в таблице, чтобы вырезать клип."
+CLIP_NO_VIDEO = "Видео матча не передано: клип вырезать не из чего. Запустите `ui --video <путь>`."
+CLIP_READY = "Клип: «{type}» в {time}, {before} с до и {after} с после."
+CLIP_FAILED = "Клип не сделан: {error}"
+CLIP_DOWNLOAD = "Скачать клип"
+CLIP_FILE_GONE = "Файл клипа больше не найден: {name}. Вырежьте его заново."

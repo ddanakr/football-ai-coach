@@ -49,6 +49,8 @@ def test_ui_starts_streamlit_with_defaults_from_the_video(
         f"--youtube-id={VID}",
         "--match-dir",
         str(video.parent),
+        "--video",
+        str(video),
     ]
 
 

@@ -64,10 +64,11 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 ├── configs/            # план: пороги, окна NMS, лексиконы, шаблоны плашек (yaml); пока пороги лежат в pydantic-моделях стадий (D-031)
 ├── docs/               # TZ.md; протокол разметки
 ├── src/aicoach/
-│   ├── cli.py          # точка входа: python -m aicoach.cli <команда>; команды: scoreboard, scoreboard-calibrate, plates, spotting-eval, fuse, run, ui
+│   ├── cli.py          # точка входа: python -m aicoach.cli <команда>; команды: scoreboard, scoreboard-calibrate, plates, spotting-eval, fuse, run, ui, clip
 │   ├── pipeline.py     # команда `run`: scoreboard, plates, fusion по порядку, статус `run` в status.json; модели в ней нет
 │   ├── status.py       # status.json каталога матча: состояние стадий (running, done, failed) и прогресс
 │   ├── stage_common.py # общие помощники стадий: атомарная запись, статус, прогресс, запись сбоя
+│   ├── clips.py        # команда `clip`: экспорт клипа FFmpeg (D-056): окно `clip_window`, время из events_current, перекодирование H.264/AAC, `clips/` рядом с видео, готовый файл не режется заново
 │   ├── errors.py       # иерархия исключений
 │   ├── logging_setup.py  # structlog, JSON-строки в stderr
 │   ├── config.py       # план: Settings (pydantic-settings)
@@ -101,13 +102,12 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 │   │   └── stage.py        # чтение входов, кэш, запись в БД (`aicoach.db`) и `candidates.json`, защита правок, статус
 │   ├── ingest/  speech/    # план
 │   ├── agent/          # план: инструменты, проверка ссылок, промпты
-│   ├── export/         # план: клипы FFmpeg
-│   └── ui/             # просмотр событий (Streamlit, только чтение, D-054)
+│   └── ui/             # просмотр событий, ручные правки и экспорт клипа (Streamlit, D-054, D-055, D-056)
 │       ├── app.py          # тонкий скрипт Streamlit: плеер st.video, таблица событий с выбором строки, фильтры в боковой панели
 │       ├── logic.py        # чистые функции: фильтры, mm:ss, подписи, youtube_link, строки таблицы, выбор строки → событие
 │       ├── edits.py        # чистая логика ручных правок: разбор мм:сс, проверка времени по границам таймов и длине видео, сборка правки
 │       ├── launch.py       # аргументы скрипта после `--` и команда запуска streamlit; ID видео только аргумент процесса
-│       └── data.py         # чтение events_current через слой хранилища
+│       └── data.py         # события, запись правок в журнал edits и границы таймов через слой хранилища
 ├── tests/              # структура в TESTING.md
 ├── data_labels/        # эталон разметки: JSON-файлы формата GroundTruth (D-040), в git
 ├── data/  mlruns/  scratch/   # в .gitignore
@@ -152,7 +152,7 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 
 **Отказоустойчивость:**
 
-- Иерархия исключений в `errors.py`: базовый `AicoachError`; наследники `IngestError`, `ScoreboardParseError`, `PlatesError`, `SpottingError`, `TranscriptionError`, `FusionError`, `StorageError`, `EvalError`, `AgentValidationError`, `ConfigError`, `ExternalServiceError`.
+- Иерархия исключений в `errors.py`: базовый `AicoachError`; наследники `IngestError`, `ScoreboardParseError`, `PlatesError`, `SpottingError`, `TranscriptionError`, `FusionError`, `StorageError`, `EvalError`, `AgentValidationError`, `ConfigError`, `ExternalServiceError`, `ExportError`.
 - Запрещены голый `except:`, `except Exception: pass` и проглатывание ошибки без записи в лог. Исключение либо обрабатывается осмысленно, либо оборачивается в типизированное и поднимается выше с `raise ... from err`.
 - Вход проверяется на границах (CLI, файлы, ответы API и моделей) схемами `pydantic`. Внутри ядра данные считаются проверенными.
 - Внешние вызовы (LLM API, загрузка): таймаут обязателен, повтор с экспоненциальной задержкой на временные ошибки (429, 5xx, сеть), затем `ExternalServiceError`. Ответ языковой модели проверяется схемой и валидатором ссылок.

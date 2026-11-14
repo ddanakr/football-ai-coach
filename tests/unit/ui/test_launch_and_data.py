@@ -151,3 +151,19 @@ def test_load_events_returns_current_events_in_time_order_without_deleted(tmp_pa
 def test_parse_app_args_option_without_value_raises_config_error() -> None:
     with pytest.raises(ConfigError, match="invalid viewer argument"):
         parse_app_args(["--db"])
+
+
+@pytest.mark.unit
+def test_video_is_passed_on_and_read_back(tmp_path: Path) -> None:
+    args = AppArgs(
+        db=tmp_path / "a.db",
+        match_id="m1",
+        youtube_id=VID,
+        match_dir=tmp_path,
+        video=tmp_path / "src.mp4",
+    )
+
+    command = build_streamlit_command(args, python="py")
+
+    assert command[-2:] == ["--video", str(tmp_path / "src.mp4")]
+    assert parse_app_args(command[6:]) == args
