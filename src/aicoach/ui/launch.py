@@ -24,6 +24,8 @@ class AppArgs:
     # Where `candidates.json` and `scoreboard.json` lie (the video's directory); they give the
     # half bounds and the video length that manual edits are checked against. None: next to `db`.
     match_dir: Path | None = None
+    # The match video, for clip export (FR-7). None: the viewer cannot export clips.
+    video: Path | None = None
 
     @property
     def results_dir(self) -> Path:
@@ -54,6 +56,8 @@ def build_streamlit_command(args: AppArgs, python: str | None = None) -> list[st
     ]
     if args.match_dir is not None:
         command += ["--match-dir", str(args.match_dir)]
+    if args.video is not None:
+        command += ["--video", str(args.video)]
     return command
 
 
@@ -68,6 +72,7 @@ def parse_app_args(argv: Sequence[str]) -> AppArgs:
     parser.add_argument("--match-id")
     parser.add_argument("--youtube-id")
     parser.add_argument("--match-dir", type=Path)
+    parser.add_argument("--video", type=Path)
     try:
         # Streamlit may add its own words to the command line; they are not ours to judge.
         known, _ = parser.parse_known_args(list(argv))
@@ -83,4 +88,5 @@ def parse_app_args(argv: Sequence[str]) -> AppArgs:
         match_id=known.match_id,
         youtube_id=validate_video_id(known.youtube_id),
         match_dir=known.match_dir,
+        video=known.video,
     )

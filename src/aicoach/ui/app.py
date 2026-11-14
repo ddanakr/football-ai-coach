@@ -8,12 +8,14 @@ page can never write an edit twice.
 
 import sys
 from collections.abc import Callable
+from pathlib import Path
 
 import streamlit as st
 import structlog
 
+from aicoach import clips
 from aicoach.domain.events import EventType
-from aicoach.errors import ConfigError, StorageError
+from aicoach.errors import ConfigError, ExportError, StorageError
 from aicoach.i18n import ru
 from aicoach.storage import CurrentEvent
 from aicoach.ui.data import (
@@ -57,6 +59,10 @@ _SELECTED = "selected_event_id"  # id of the chosen event, not its row: rows mov
 _ROWS_SEEN = "rows_seen"  # ids shown in the table on the previous run
 _PICK_SEEN = "pick_seen"  # table selection reported on the previous run
 _FLASH = "flash"  # (level, text) of the last edit, shown once
+_CLIP = "clip_result"  # (path, caption) of the last exported clip; kept across reruns
+_CLIP_ERROR = "clip_error"  # why the last export failed; cleared by the next export
+_CLIP_BEFORE = "clip_before"
+_CLIP_AFTER = "clip_after"
 _HALF_OPTIONS: list[HalfFilter] = [None, 1, 2]
 _TYPES = list(EventType)
 
@@ -167,6 +173,78 @@ def _on_undo(args: AppArgs) -> None:
         return
     logger.info("edit_undone", stage="ui", match_id=args.match_id)
     _flash("ok", ru.EDIT_UNDONE)
+
+
+def _on_export(args: AppArgs, video: Path, event_id: str) -> None:
+    """Cut the clip of the chosen event. Runs in a callback only, so once per click."""
+    st.session_state.pop(_CLIP_ERROR, None)
+    before = float(st.session_state[_CLIP_BEFORE])
+    after = float(st.session_state[_CLIP_AFTER])
+    try:
+        event = _event_by_id(args, event_id)
+        path = clips.export_clip(video, event, before, after)
+    except EditInputError as err:
+        st.session_state[_CLIP_ERROR] = str(err)
+        return
+    except (ExportError, StorageError) as err:
+        logger.warning(
+            "clip_export_failed", stage="ui", match_id=args.match_id, reason=str(err)[:200]
+        )
+        st.session_state[_CLIP_ERROR] = ru.CLIP_FAILED.format(error=err)
+        return
+    row = to_row(event)
+    caption = ru.CLIP_READY.format(
+        type=row.type_label, time=row.time_text, before=f"{before:g}", after=f"{after:g}"
+    )
+    st.session_state[_CLIP] = (str(path), caption)
+
+
+def _show_clip() -> None:
+    """The error of the last export, or the last clip with a download button."""
+    error: str | None = st.session_state.get(_CLIP_ERROR)
+    if error is not None:
+        st.error(error)
+    result: tuple[str, str] | None = st.session_state.get(_CLIP)
+    if result is None:
+        return
+    path = Path(result[0])
+    try:
+        data = path.read_bytes()
+    except OSError:
+        st.session_state.pop(_CLIP, None)
+        st.error(ru.CLIP_FILE_GONE.format(name=path.name))
+        return
+    st.caption(result[1])
+    st.video(data, format="video/mp4")
+    st.download_button(
+        ru.CLIP_DOWNLOAD, data=data, file_name=path.name, mime="video/mp4", key="btn_clip_download"
+    )
+
+
+def _render_clip_panel(args: AppArgs, selected: CurrentEvent | None) -> None:
+    """Margins, the export button for the chosen event, and the last clip (in the sidebar)."""
+    with st.sidebar:
+        st.header(ru.CLIP_HEADER)
+        before_col, after_col = st.columns(2)
+        before_col.number_input(
+            ru.CLIP_BEFORE, min_value=0.0, value=clips.DEFAULT_BEFORE_S, step=1.0, key=_CLIP_BEFORE
+        )
+        after_col.number_input(
+            ru.CLIP_AFTER, min_value=0.0, value=clips.DEFAULT_AFTER_S, step=1.0, key=_CLIP_AFTER
+        )
+        if args.video is None:
+            st.caption(ru.CLIP_NO_VIDEO)
+        elif selected is None:
+            st.caption(ru.CLIP_PICK_FIRST)
+        st.button(
+            ru.CLIP_EXPORT,
+            key="btn_clip",
+            on_click=_on_export,
+            args=(args, args.video, None if selected is None else selected.event_id),
+            disabled=args.video is None or selected is None,
+            help=ru.CLIP_EXPORT_HELP,
+        )
+        _show_clip()
 
 
 def _render_table(rows: list[EventRow]) -> tuple[int, ...]:
@@ -335,6 +413,7 @@ def main() -> None:
         with middle:
             _render_player(args, selected)
     _render_edit_panel(args, selected, n_edits)
+    _render_clip_panel(args, selected)
 
 
 main()

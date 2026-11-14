@@ -31,3 +31,7 @@ class SpottingError(AicoachError):
 
 class FusionError(AicoachError):
     """The fusion stage cannot continue: missing or stale inputs, no half bounds, lost edits."""
+
+
+class ExportError(AicoachError):
+    """A clip cannot be exported: unknown event, bad window, missing or failing FFmpeg."""
