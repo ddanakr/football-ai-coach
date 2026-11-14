@@ -120,3 +120,56 @@ MISSING_GEMINI_KEY = (
     "Ключ GEMINI_API_KEY не найден в файле .env в корне репозитория: "
     "скопируйте .env.example в .env и впишите ключ."
 )
+
+# New match from a YouTube link (D15): the ingest command and the sidebar block.
+TDEED_WAITING = (
+    "Ждём файл модели T-DEED. Обработайте видео {video} в ноутбуке T-DEED "
+    "(перекодировать в 25 к/с без обрезки, `inference.py` с `--inference_threshold 0.05`) "
+    "и положите его `results_inference.json` в каталог {dir} под именем `tdeed_<имя>.json`, "
+    "например `tdeed_SoccerNet_small.json`; такой файл в каталоге должен быть один."
+)
+TDEED_RESUME_CLI = (
+    "Затем запустите ту же команду `ingest` ещё раз: готовые стадии пропустятся, "
+    "продолжится слияние."
+)
+TDEED_RESUME_UI = (
+    "Затем нажмите «Обработать» с той же ссылкой ещё раз: готовые стадии пропустятся, "
+    "продолжится слияние."
+)
+INGEST_HEADER = "Новый матч"
+INGEST_URL = "Ссылка на YouTube"
+INGEST_URL_HELP = "Например https://www.youtube.com/watch?v=… или https://youtu.be/…"
+INGEST_START = "Обработать"
+INGEST_NO_ROOT = (
+    "Каталог данных не задан: запустите интерфейс с `--data-root <каталог>`, "
+    "чтобы обрабатывать новые матчи."
+)
+INGEST_BAD_URL = "Ссылка не принята: {error}"
+INGEST_BUSY = "Этот матч уже обрабатывается (процесс {pid}). Дождитесь окончания."
+INGEST_START_FAILED = "Не удалось запустить обработку: {error}"
+INGEST_STARTED = "Обработка запущена. Журнал: {log}"
+INGEST_MATCH = "Матч {match_id}"
+INGEST_LOG = "Журнал процесса: {log}"
+INGEST_FAILED = "Обработка остановилась: {error}"
+INGEST_PROCESS_GONE = "Процесс обработки завершился, а статус не обновлён. Смотрите журнал {log}."
+INGEST_DONE = "Матч обработан, события в базе."
+INGEST_OPEN = "Открыть матч"
+INGEST_STEP_LABELS: dict[str, str] = {
+    "download": "Загрузка видео",
+    "audio": "Звук 16 кГц",
+    "scoreboard": "Табло",
+    "plates": "Плашки",
+    "tdeed": "Файл T-DEED",
+    "fuse": "Слияние в базу",
+}
+INGEST_STATE_LABELS: dict[str, str] = {
+    "pending": "ещё не начато",
+    "running": "идёт",
+    "done": "готово",
+    "failed": "ошибка",
+    "waiting": "ждёт T-DEED",
+}
+NO_MATCH_OPEN = (
+    "Матч не открыт. Вставьте ссылку в блок «Новый матч» в боковой панели "
+    "или запустите `python -m aicoach.cli ui --video <путь> --youtube-id <id>`."
+)

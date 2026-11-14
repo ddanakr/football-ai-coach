@@ -1,4 +1,5 @@
-"""Streamlit viewer and editor of the event catalog (D12a view, D12b manual edits).
+"""Streamlit viewer and editor of the event catalog (D12a view, D12b manual edits, D15 new
+matches from a YouTube link).
 
 Thin: the logic is in `logic.py` and `edits.py`. Started by `python -m aicoach.cli ui`; the
 arguments after `--` are read by `parse_app_args`. The page only draws; every write to the
@@ -15,8 +16,11 @@ import structlog
 
 from aicoach import clips
 from aicoach.domain.events import EventType
-from aicoach.errors import ConfigError, ExportError, StorageError
+from aicoach.errors import ConfigError, ExportError, IngestError, StorageError
 from aicoach.i18n import ru
+from aicoach.ingest.download import VIDEO_FILE
+from aicoach.ingest.stage import STAGE as INGEST_STAGE
+from aicoach.status import read_status
 from aicoach.storage import CurrentEvent
 from aicoach.ui.data import (
     apply_edit,
@@ -35,7 +39,15 @@ from aicoach.ui.edits import (
     plan_retype,
     with_derived_half,
 )
-from aicoach.ui.launch import AppArgs, parse_app_args
+from aicoach.ui.ingest_jobs import (
+    IngestJob,
+    busy_pid,
+    job_phase,
+    launch,
+    plan_job,
+    step_rows,
+)
+from aicoach.ui.launch import AppArgs, StartArgs, parse_start_args
 from aicoach.ui.logic import (
     EventFilter,
     EventRow,
@@ -63,6 +75,12 @@ _CLIP = "clip_result"  # (path, caption) of the last exported clip; kept across 
 _CLIP_ERROR = "clip_error"  # why the last export failed; cleared by the next export
 _CLIP_BEFORE = "clip_before"
 _CLIP_AFTER = "clip_after"
+_OPENED = "opened_match"  # AppArgs of a match opened from the "new match" block
+_JOB = "ingest_job"  # the IngestJob the sidebar follows
+_PROC = "ingest_process"  # its process, while this session started it
+_INGEST_FLASH = "ingest_flash"  # (level, text) of the last start attempt
+_URL_KEY = "ingest_url"
+STATUS_REFRESH_S = 2  # how often the step list rereads status.json
 _HALF_OPTIONS: list[HalfFilter] = [None, 1, 2]
 _TYPES = list(EventType)
 
@@ -366,6 +384,96 @@ def _render_edit_panel(args: AppArgs, selected: CurrentEvent | None, n_edits: in
     st.caption(ru.EDIT_COUNT.format(count=n_edits) if n_edits else ru.EDIT_NO_EDITS)
 
 
+def _process_alive(job: IngestJob) -> bool:
+    """The ingest of `job` still runs: our own process, or any process holding its lock."""
+    proc = st.session_state.get(_PROC)
+    if proc is not None and proc.poll() is None:
+        return True
+    return busy_pid(job) is not None
+
+
+def _on_start_ingest(start: StartArgs) -> None:
+    """Start `cli ingest` in the background for the typed link. Runs in a callback only."""
+    st.session_state.pop(_INGEST_FLASH, None)
+    if start.data_root is None:
+        return
+    try:
+        job = plan_job(st.session_state.get(_URL_KEY, ""), start.data_root, start.templates)
+    except IngestError as err:
+        st.session_state[_INGEST_FLASH] = ("error", ru.INGEST_BAD_URL.format(error=err))
+        return
+    tracked: IngestJob | None = st.session_state.get(_JOB)
+    proc = st.session_state.get(_PROC)
+    pid = busy_pid(job)
+    same = tracked is not None and tracked.match_dir == job.match_dir
+    if same and proc is not None and proc.poll() is None:
+        pid = proc.pid  # started a moment ago: the process may not hold its lock yet
+    if pid is not None:
+        st.session_state[_JOB] = job
+        st.session_state[_INGEST_FLASH] = ("error", ru.INGEST_BUSY.format(pid=pid))
+        return
+    try:
+        started = launch(job)
+    except OSError as err:
+        logger.warning("ingest_start_failed", stage="ui", match_id=job.video_id, reason=str(err))
+        st.session_state[_INGEST_FLASH] = ("error", ru.INGEST_START_FAILED.format(error=err))
+        return
+    logger.info("ingest_started", stage="ui", match_id=job.video_id, pid=started.pid)
+    st.session_state[_JOB] = job
+    st.session_state[_PROC] = started
+    st.session_state[_INGEST_FLASH] = ("ok", ru.INGEST_STARTED.format(log=job.log_path))
+
+
+def _show_phase(job: IngestJob, phase: str, error: str | None) -> None:
+    if phase == "waiting":
+        video = job.match_dir / VIDEO_FILE
+        st.info(f"{ru.TDEED_WAITING.format(video=video, dir=job.match_dir)} {ru.TDEED_RESUME_UI}")
+    elif phase == "failed":
+        st.error(ru.INGEST_FAILED.format(error=error))
+    elif phase == "gone":
+        st.warning(ru.INGEST_PROCESS_GONE.format(log=job.log_path))
+    elif phase == "done":
+        st.success(ru.INGEST_DONE)
+        if st.button(ru.INGEST_OPEN, key="btn_open_match"):
+            st.session_state[_OPENED] = job.view_args()
+            st.rerun()  # the whole page, not only this fragment: it shows the new match
+
+
+@st.fragment(run_every=STATUS_REFRESH_S)
+def _job_panel() -> None:
+    """Steps of the followed ingest; reread every few seconds without blocking the page."""
+    job: IngestJob | None = st.session_state.get(_JOB)
+    if job is None:
+        return
+    status = read_status(job.match_dir)
+    phase = job_phase(status, _process_alive(job))
+    st.markdown(f"**{ru.INGEST_MATCH.format(match_id=job.match_dir.name)}**")
+    for row in step_rows(status):
+        line = f"{row.label}: {row.state}"
+        if row.state == ru.INGEST_STATE_LABELS["running"] and row.progress > 0:
+            line += f" ({row.progress:.0%})"
+        st.text(line)
+    entry = status.stages.get(INGEST_STAGE)
+    _show_phase(job, phase, None if entry is None else entry.error)
+    st.caption(ru.INGEST_LOG.format(log=job.log_path))
+
+
+def _render_ingest_panel(start: StartArgs) -> None:
+    """The "new match" block at the top of the sidebar."""
+    with st.sidebar:
+        st.header(ru.INGEST_HEADER)
+        if start.data_root is None:
+            st.caption(ru.INGEST_NO_ROOT)
+            return
+        st.text_input(ru.INGEST_URL, key=_URL_KEY, help=ru.INGEST_URL_HELP)
+        st.button(ru.INGEST_START, key="btn_ingest", on_click=_on_start_ingest, args=(start,))
+        flash: tuple[str, str] | None = st.session_state.get(_INGEST_FLASH)
+        if flash is not None:
+            (st.success if flash[0] == "ok" else st.error)(flash[1])
+        if st.session_state.get(_JOB) is not None:
+            _job_panel()
+
+
 def _load(args: AppArgs) -> tuple[list[CurrentEvent], int]:
     """Events (the half of edited ones derived from their time) and the edits in force."""
     bounds = load_time_bounds(args.results_dir)
@@ -378,9 +486,14 @@ def main() -> None:
     st.set_page_config(page_title=ru.TITLE, layout="wide")
     st.title(ru.TITLE)
     try:
-        args = parse_app_args(sys.argv[1:])
+        start = parse_start_args(sys.argv[1:])
     except ConfigError as err:
         st.error(ru.BAD_ARGS.format(error=err))
+        st.stop()
+    _render_ingest_panel(start)
+    args: AppArgs | None = st.session_state.get(_OPENED) or start.match
+    if args is None:
+        st.info(ru.NO_MATCH_OPEN)
         st.stop()
     if not args.db.is_file():
         st.error(ru.NO_DB.format(path=args.db))

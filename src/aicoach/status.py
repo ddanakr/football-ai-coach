@@ -10,7 +10,8 @@ from aicoach.errors import StorageError
 from aicoach.logging_setup import stage_logger
 
 STATUS_FILE = "status.json"
-State = Literal["running", "done", "failed"]
+# "waiting": the stage needs a file a person brings (the T-DEED output of the notebook).
+State = Literal["running", "done", "failed", "waiting"]
 
 
 class StageStatus(BaseModel):

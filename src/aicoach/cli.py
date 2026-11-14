@@ -19,6 +19,9 @@ from aicoach.fusion.config import load_fuse_config
 from aicoach.fusion.rules import count_events
 from aicoach.fusion.schemas import CandidatesResult
 from aicoach.fusion.stage import DB_FILE, run_fuse
+from aicoach.i18n import ru
+from aicoach.ingest.download import VIDEO_FILE
+from aicoach.ingest.stage import EXIT_WAITING_TDEED, run_ingest
 from aicoach.logging_setup import configure_logging
 from aicoach.pipeline import run_pipeline
 from aicoach.plates.config import PlatesConfig
@@ -33,7 +36,7 @@ from aicoach.scoreboard.stage import (
 from aicoach.spotting.convert import DEFAULT_FPS, DEFAULT_MERGE_RADIUS_S
 from aicoach.spotting.evaluation import DEFAULT_THRESHOLDS, DEVELOPMENT_HALF, format_evaluation
 from aicoach.spotting.run import DEFAULT_GROUND_TRUTH, run_spotting_eval
-from aicoach.ui.launch import AppArgs, build_streamlit_command
+from aicoach.ui.launch import AppArgs, StartArgs, build_streamlit_command
 from aicoach.ui.logic import validate_video_id
 
 _DEFAULT_WORKDIR_ROOT = Path("scratch")
@@ -72,9 +75,32 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--cpu", action="store_true", help="decode on the CPU (very slow for AV1)")
     _add_fuse_options(run, force_help="recompute all three stages (reads the video twice, slow)")
 
-    ui = commands.add_parser("ui", help="open the event viewer in the browser (view only)")
-    ui.add_argument("--video", type=Path, required=True, help="path of the match video")
-    ui.add_argument("--youtube-id", required=True, help="YouTube id of the same match (11 chars)")
+    ingest = commands.add_parser(
+        "ingest", help="YouTube link to events: download, audio, scoreboard, plates, fuse"
+    )
+    ingest.add_argument("url", help="YouTube link of the match (watch, youtu.be or live form)")
+    ingest.add_argument(
+        "--data-root", type=Path, required=True, help="directory with one directory per match"
+    )
+    ingest.add_argument("--match-id", help="name of the match directory (default: the video id)")
+    ingest.add_argument(
+        "--templates",
+        type=Path,
+        help="scoreboard_templates of a calibrated match of the same broadcast (copied once)",
+    )
+    ingest.add_argument("--cpu", action="store_true", help="decode on the CPU (very slow for AV1)")
+
+    ui = commands.add_parser(
+        "ui", help="open the event viewer in the browser (view, edit, clips, new matches)"
+    )
+    ui.add_argument("--video", type=Path, help="path of the match video to open")
+    ui.add_argument("--youtube-id", help="YouTube id of the same match (11 chars)")
+    ui.add_argument(
+        "--data-root", type=Path, help="directory for new matches (enables the 'new match' block)"
+    )
+    ui.add_argument(
+        "--templates", type=Path, help="scoreboard_templates given to every ingest from the viewer"
+    )
     ui.add_argument("--match-id", help="default: name of the video's directory")
     ui.add_argument("--db", type=Path, help="database file (default: aicoach.db by the video)")
 
@@ -243,6 +269,24 @@ def _run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _ingest(args: argparse.Namespace) -> int:
+    """Exit code 0 when the events are in the database, 3 while the T-DEED file is missing."""
+    result = run_ingest(
+        args.url,
+        args.data_root,
+        match_id=args.match_id,
+        templates=args.templates,
+        hw_accel=not args.cpu,
+    )
+    if result.fusion is None:
+        waiting = ru.TDEED_WAITING.format(video=result.match_dir / VIDEO_FILE, dir=result.match_dir)
+        sys.stdout.write(f"{waiting}\n{ru.TDEED_RESUME_CLI}\n")
+        return EXIT_WAITING_TDEED
+    sys.stdout.write(f"match directory: {result.match_dir}\n")
+    _report_fusion(result.fusion)
+    return 0
+
+
 def _calibrate(args: argparse.Namespace) -> int:
     match_id = _match_id(args)
     workdir = args.workdir or _DEFAULT_WORKDIR_ROOT / f"{match_id}_scoreboard_calibration"
@@ -282,14 +326,24 @@ def _spotting_eval(args: argparse.Namespace) -> int:
 
 def _ui(args: argparse.Namespace) -> int:
     """Run the Streamlit viewer; its exit code is ours. The video id stays in the arguments."""
-    app_args = AppArgs(
-        db=args.db or args.video.parent / DB_FILE,
-        match_id=_match_id(args),
-        youtube_id=validate_video_id(args.youtube_id),
-        match_dir=args.video.parent,
-        video=args.video,
+    if (args.video is None) != (args.youtube_id is None):
+        msg = "ui: --video and --youtube-id go together"
+        raise ConfigError(msg)
+    if args.video is None and args.data_root is None:
+        msg = "ui: give --video and --youtube-id to open a match, or --data-root for new ones"
+        raise ConfigError(msg)
+    match = None
+    if args.video is not None:
+        match = AppArgs(
+            db=args.db or args.video.parent / DB_FILE,
+            match_id=_match_id(args),
+            youtube_id=validate_video_id(args.youtube_id),
+            match_dir=args.video.parent,
+            video=args.video,
+        )
+    command = build_streamlit_command(
+        StartArgs(match=match, data_root=args.data_root, templates=args.templates)
     )
-    command = build_streamlit_command(app_args)
     try:
         # Fixed program and our own arguments: nothing here comes from a shell string.
         return subprocess.run(command, check=False).returncode  # noqa: S603
@@ -311,7 +365,8 @@ def _clip(args: argparse.Namespace) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run a command; returns the process exit code (0 ok, 2 on a handled error)."""
+    """Run a command; returns the process exit code (0 ok, 2 on a handled error, 3 while
+    `ingest` waits for the T-DEED file)."""
     args = build_parser().parse_args(argv)
     try:
         configure_logging(args.log_level)
@@ -325,6 +380,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _fuse(args)
         if args.command == "run":
             return _run(args)
+        if args.command == "ingest":
+            return _ingest(args)
         if args.command == "ui":
             return _ui(args)
         if args.command == "clip":

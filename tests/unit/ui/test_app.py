@@ -82,13 +82,25 @@ def test_app_with_unreadable_database_shows_an_error(
 
 @pytest.mark.unit
 def test_app_with_bad_arguments_shows_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("sys.argv", ["app.py"])
+    monkeypatch.setattr("sys.argv", ["app.py", "--match-id", "m"])  # no --db, no --youtube-id
 
     app = AppTest.from_file(str(app_script()), default_timeout=20).run()
 
     assert not app.exception
     assert len(app.error) == 1
     assert "cli ui" in app.error[0].value
+
+
+@pytest.mark.unit
+def test_app_without_any_match_says_none_is_open(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.argv", ["app.py"])
+
+    app = AppTest.from_file(str(app_script()), default_timeout=20).run()
+
+    assert not app.exception
+    assert not app.error
+    assert [i.value for i in app.info] == [ru.NO_MATCH_OPEN]
+    assert any(ru.INGEST_NO_ROOT in c.value for c in app.sidebar.caption)
 
 
 @pytest.mark.unit

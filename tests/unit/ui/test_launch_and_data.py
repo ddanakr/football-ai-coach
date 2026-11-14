@@ -9,7 +9,14 @@ from aicoach.domain.events import EventType
 from aicoach.errors import ConfigError, StorageError
 from aicoach.storage import NewPrediction, add_edit, add_predictions, connect, init_db
 from aicoach.ui.data import load_events
-from aicoach.ui.launch import AppArgs, app_script, build_streamlit_command, parse_app_args
+from aicoach.ui.launch import (
+    AppArgs,
+    StartArgs,
+    app_script,
+    build_streamlit_command,
+    parse_app_args,
+    parse_start_args,
+)
 
 VID = "abcDEF_-123"
 
@@ -167,3 +174,19 @@ def test_video_is_passed_on_and_read_back(tmp_path: Path) -> None:
 
     assert command[-2:] == ["--video", str(tmp_path / "src.mp4")]
     assert parse_app_args(command[6:]) == args
+
+
+@pytest.mark.unit
+def test_parse_start_args_roundtrips_a_match_and_a_data_root(tmp_path: Path) -> None:
+    match = AppArgs(db=tmp_path / "a.db", match_id="m", youtube_id="-bcDEF_-123")
+    start = StartArgs(match=match, data_root=tmp_path / "data", templates=tmp_path / "t")
+
+    assert parse_start_args(build_streamlit_command(start)[6:]) == start
+
+
+@pytest.mark.unit
+def test_parse_start_args_without_a_match_gives_none_and_parse_app_args_refuses() -> None:
+    assert parse_start_args(["--data-root", "d"]) == StartArgs(data_root=Path("d"))
+    assert parse_start_args([]) == StartArgs()
+    with pytest.raises(ConfigError, match="--db"):
+        parse_app_args(["--data-root", "d"])

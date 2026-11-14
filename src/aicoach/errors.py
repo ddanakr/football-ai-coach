@@ -35,3 +35,7 @@ class FusionError(AicoachError):
 
 class ExportError(AicoachError):
     """A clip cannot be exported: unknown event, bad window, missing or failing FFmpeg."""
+
+
+class IngestError(AicoachError):
+    """A match cannot be ingested: bad link, unavailable video, wrong frame size, no audio."""

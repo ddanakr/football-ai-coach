@@ -106,3 +106,36 @@ def test_ui_ctrl_c_is_a_normal_exit(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("aicoach.cli.subprocess.run", FakeRun(raises=KeyboardInterrupt()))
 
     assert main(["ui", "--video", "v.mp4", "--youtube-id", VID]) == 0
+
+
+@pytest.mark.unit
+def test_ui_with_only_a_data_root_opens_without_a_match(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fake = FakeRun()
+    monkeypatch.setattr("aicoach.cli.subprocess.run", fake)
+
+    code = main(["ui", "--data-root", str(tmp_path), "--templates", str(tmp_path / "t")])
+
+    assert code == 0
+    (command,) = fake.commands
+    assert command[5:] == ["--", "--data-root", str(tmp_path), "--templates", str(tmp_path / "t")]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["ui"],
+        ["ui", "--youtube-id", VID],
+        ["ui", "--video", "x/src.mp4", "--data-root", "d"],
+    ],
+)
+def test_ui_incomplete_match_arguments_exit_2(
+    monkeypatch: pytest.MonkeyPatch, argv: list[str]
+) -> None:
+    fake = FakeRun()
+    monkeypatch.setattr("aicoach.cli.subprocess.run", fake)
+
+    assert main(argv) == 2
+    assert fake.commands == []
