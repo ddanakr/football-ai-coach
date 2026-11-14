@@ -117,9 +117,18 @@ CLIP_DOWNLOAD = "Скачать клип"
 CLIP_FILE_GONE = "Файл клипа больше не найден: {name}. Вырежьте его заново."
 
 MISSING_GEMINI_KEY = (
-    "Ключ GEMINI_API_KEY не найден в файле .env в корне репозитория: "
-    "скопируйте .env.example в .env и впишите ключ."
+    "Ключ GEMINI_API_KEY не задан ни в переменной окружения, ни в файле .env в корне "
+    "репозитория: скопируйте .env.example в .env и впишите ключ."
 )
+UNREADABLE_ENV_FILE = (
+    "Файл .env не читается (права доступа или не UTF-8); исправьте или удалите его, "
+    "шаблон лежит в .env.example."
+)
+NO_DATA_ROOT = (
+    "Не задан каталог данных: укажите --data-root или AICOACH_DATA_ROOT (переменная окружения "
+    "или .env, см. .env.example)."
+)
+INVALID_SETTINGS = "Неверное значение настроек: {fields} (см. .env.example)."
 
 # New match from a YouTube link (D15): the ingest command and the sidebar block.
 TDEED_WAITING = (

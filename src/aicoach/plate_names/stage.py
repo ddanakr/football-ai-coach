@@ -182,6 +182,7 @@ def _run(
     config: PlateNamesConfig,
     force: bool,
     reader: NameReader | None,
+    tesseract_cmd: Path | None,
     progress: Progress,
     log: Logger,
 ) -> tuple[PlateNamesResult, bool]:
@@ -196,7 +197,7 @@ def _run(
         if cached is not None:
             return cached, True
     set_status(match_dir, STAGE, "running", 0.0, log)
-    reader = reader or TesseractReader.create()
+    reader = reader or TesseractReader.create(tesseract_cmd)
     names: list[PlateNames] = []
     for i, plate in enumerate(plates.plates):
         texts = read_plate(plate, _read_crop(match_dir, plate), reader, config)
@@ -226,6 +227,7 @@ def run_plate_names(
     config: PlateNamesConfig | None = None,
     force: bool = False,
     reader: NameReader | None = None,
+    tesseract_cmd: Path | None = None,
 ) -> PlateNamesResult | None:
     """Read the names on the plates of the match in `match_dir`.
 
@@ -241,6 +243,8 @@ def run_plate_names(
         config: Parameters; default `PlateNamesConfig()`.
         force: Read again even if an up-to-date result exists.
         reader: The text reader (a fake in tests); default Tesseract.
+        tesseract_cmd: Path to the Tesseract program (the `TESSERACT_CMD` setting); `None`
+            searches PATH, then the default install folders.
 
     Raises:
         PlatesError: no or invalid `plates.json`, a missing crop, an invalid lineup file, or
@@ -251,7 +255,9 @@ def run_plate_names(
     progress = Progress(match_dir, STAGE, log)
     started = time.perf_counter()
     try:
-        result, from_cache = _run(match_dir, lineup_path, config, force, reader, progress, log)
+        result, from_cache = _run(
+            match_dir, lineup_path, config, force, reader, tesseract_cmd, progress, log
+        )
     except OcrUnavailableError as err:
         reason = ru.PLATE_NAMES_SKIPPED.format(reason=err)
         log.warning("stage_skipped_no_ocr", reason=str(err))

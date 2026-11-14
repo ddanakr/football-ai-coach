@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2",
-    "pydantic-settings",
+    "pydantic-settings>=2.16",
     "python-dotenv>=1.2",
     "structlog",
     "numpy",

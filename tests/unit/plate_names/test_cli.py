@@ -101,3 +101,21 @@ def test_plate_names_command_without_plates_json_is_a_handled_error(
 
     assert code == 2
     assert "run first: python -m aicoach.cli plates" in capsys.readouterr().err
+
+
+@pytest.mark.unit
+def test_plate_names_command_passes_the_tesseract_setting_to_the_reader(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_match(tmp_path, [GOAL], LINEUP_CSV)
+    seen: list[Path | None] = []
+
+    def create(command: Path | None = None, *_a: object, **_k: object) -> FakeReader:
+        seen.append(command)
+        return FakeReader("9 РОМАН ЛЕБЕДЕВ")
+
+    monkeypatch.setattr(TesseractReader, "create", create)
+    monkeypatch.setenv("TESSERACT_CMD", str(tmp_path / "tess.exe"))
+
+    assert main(["plate-names", "--video", str(tmp_path / "src.mp4")]) == 0
+    assert seen == [tmp_path / "tess.exe"]
