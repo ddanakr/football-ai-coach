@@ -21,10 +21,9 @@ from aicoach.ui.logic import (
     to_row,
     to_rows,
     type_label,
-    validate_video_id,
-    watch_url,
     youtube_link,
 )
+from aicoach.youtube import validate_video_id, watch_url
 
 VID = "abcDEF_-123"
 
