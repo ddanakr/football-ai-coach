@@ -22,6 +22,10 @@ pip install -e ".[features-tf]"
 
 На Windows (PowerShell) основное окружение создаётся так: `python -m venv .venv`, затем `.venv\Scripts\Activate.ps1` и `pip install -e ".[dev]"`.
 
+**Ключ Gemini (D-057).** Ключ лежит только в файле `.env` в корне репозитория; `.env` и `*.env` в `.gitignore`, в репозитории только шаблон `.env.example` с пустым `GEMINI_API_KEY=`. Задать ключ: `Copy-Item .env.example .env`, затем открыть `.env` в редакторе и вписать значение после `GEMINI_API_KEY=` (без пробелов вокруг `=`, кавычки не нужны). Код читает ключ функцией `aicoach.config.read_gemini_api_key()`: читается только файл (переменная оболочки с тем же именем не учитывается, окружение процесса не меняется); нет файла, нет ключа или он пустой дают `ConfigError` с подсказкой. Агенту чтение и правка `.env` запрещены в `.claude/settings.json`.
+
+**Поиск секретов (D-057).** Хук `detect-secrets` (pre-commit) сверяет изменённые файлы с `.secrets.baseline`. Фиктивный ключ в тесте помечается комментарием `# pragma: allowlist secret` в той же строке. Если хук сработал на ложном срабатывании, которое нельзя пометить pragma, обновить baseline: `pip install detect-secrets==1.5.0` во временном окружении (не в `.venv`), `detect-secrets scan > .secrets.baseline`, `detect-secrets audit .secrets.baseline` (каждое срабатывание разобрать), `git add .secrets.baseline`. Проверка всей истории git отложена до публикации репозитория.
+
 ## 2. Основные команды
 
 | Команда | Что делает |

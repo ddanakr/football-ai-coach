@@ -59,7 +59,7 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 ```
 .
 ├── CLAUDE.md  GIT.md  MEMORY.md  SKILLS.md  TESTING.md
-├── README.md  pyproject.toml  .env.example (план)
+├── README.md  pyproject.toml  .env.example
 ├── scripts/            # check.py: полный контроль качества
 ├── configs/            # план: пороги, окна NMS, лексиконы, шаблоны плашек (yaml); пока пороги лежат в pydantic-моделях стадий (D-031)
 ├── docs/               # TZ.md; протокол разметки
@@ -71,7 +71,7 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 │   ├── clips.py        # команда `clip`: экспорт клипа FFmpeg (D-056): окно `clip_window`, время из events_current, перекодирование H.264/AAC, `clips/` рядом с видео, готовый файл не режется заново
 │   ├── errors.py       # иерархия исключений
 │   ├── logging_setup.py  # structlog, JSON-строки в stderr
-│   ├── config.py       # план: Settings (pydantic-settings)
+│   ├── config.py       # read_gemini_api_key: ключ Gemini из `.env` в корне (D-057)
 │   ├── i18n/           # тексты интерфейса: ru.py (казахский: план)
 │   ├── domain/         # события и категории (events.py)
 │   ├── scoreboard/     # стадия табло: часы, счёт, смены счёта, добавленное время, соответствие t_v и минуты
