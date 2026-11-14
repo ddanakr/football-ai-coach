@@ -37,7 +37,7 @@ from aicoach.spotting.convert import DEFAULT_FPS, DEFAULT_MERGE_RADIUS_S
 from aicoach.spotting.evaluation import DEFAULT_THRESHOLDS, DEVELOPMENT_HALF, format_evaluation
 from aicoach.spotting.run import DEFAULT_GROUND_TRUTH, run_spotting_eval
 from aicoach.ui.launch import AppArgs, StartArgs, build_streamlit_command
-from aicoach.ui.logic import validate_video_id
+from aicoach.youtube import validate_video_id
 
 _DEFAULT_WORKDIR_ROOT = Path("scratch")
 _Config = TypeVar("_Config", ScoreboardConfig, PlatesConfig)

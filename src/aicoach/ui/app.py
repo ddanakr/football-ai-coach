@@ -60,9 +60,9 @@ from aicoach.ui.logic import (
     table_records,
     to_row,
     to_rows,
-    watch_url,
     youtube_link,
 )
+from aicoach.youtube import watch_url
 
 PLAYER_COLUMNS = [1, 4, 1]  # the player sits in the middle one, it is not stretched over the page
 TABLE_HEIGHT_PX = 380

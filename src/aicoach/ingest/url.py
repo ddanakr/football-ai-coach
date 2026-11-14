@@ -3,7 +3,7 @@
 from urllib.parse import parse_qs, urlsplit
 
 from aicoach.errors import ConfigError, IngestError
-from aicoach.ui.logic import validate_video_id, watch_url
+from aicoach.youtube import validate_video_id, watch_url
 
 _HOSTS = frozenset({"youtube.com", "www.youtube.com", "m.youtube.com"})
 _SHORT_HOST = "youtu.be"

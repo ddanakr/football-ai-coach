@@ -5,36 +5,19 @@ No Streamlit and no I/O here, so it is tested on its own and the agent can reuse
 """
 
 import math
-import re
 from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
 from aicoach.domain.events import EventType
-from aicoach.errors import ConfigError
 from aicoach.i18n import ru
 from aicoach.storage import CurrentEvent
+from aicoach.youtube import WATCH_URL, validate_video_id
 
 # The player starts a little before the event so that the action itself is not cut off (D-054).
 PLAYER_PRE_ROLL_S = 5.0
 
-_VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}")
-_WATCH_URL = "https://www.youtube.com/watch?v={video_id}"
 HalfFilter = Literal[1, 2] | None
-
-
-def validate_video_id(video_id: str) -> str:
-    """Return the YouTube video id if it has the usual 11-character form.
-
-    The id ends up in URLs and in HTML, so anything else is refused.
-
-    Raises:
-        ConfigError: The id is empty or has other characters or another length.
-    """
-    if not _VIDEO_ID.fullmatch(video_id):
-        msg = "the YouTube video id must be 11 characters: letters, digits, '-' and '_'"
-        raise ConfigError(msg)
-    return video_id
 
 
 def _whole_seconds(t_v: float) -> int:
@@ -74,16 +57,7 @@ def youtube_link(video_id: str, t_v: float, pre_roll_s: float = PLAYER_PRE_ROLL_
         ValueError: `t_v` or `pre_roll_s` is negative, NaN or infinite.
     """
     start = player_start(t_v, pre_roll_s)
-    return f"{_WATCH_URL.format(video_id=validate_video_id(video_id))}&t={start}s"
-
-
-def watch_url(video_id: str) -> str:
-    """Plain watch URL of the video (for `st.video`).
-
-    Raises:
-        ConfigError: Bad video id.
-    """
-    return _WATCH_URL.format(video_id=validate_video_id(video_id))
+    return f"{WATCH_URL.format(video_id=validate_video_id(video_id))}&t={start}s"
 
 
 @dataclass(frozen=True)

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from aicoach.errors import ConfigError
-from aicoach.ui.logic import validate_video_id
+from aicoach.youtube import validate_video_id
 
 
 @dataclass(frozen=True)
