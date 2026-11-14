@@ -267,3 +267,12 @@ def test_numbers_spelled_as_words_are_not_checked() -> None:
 def test_numbers_in_reads_digits_and_added_time() -> None:
     assert numbers_in("45+2', 0,5 и 38-й, p:12") == {45.0, 2.0, 0.5, 38.0, 12.0}
     assert numbers_in("нет цифр") == set()
+
+
+@pytest.mark.unit
+def test_the_complaint_about_a_number_tells_how_to_get_it_from_a_tool() -> None:
+    text = describe(check("Было 9 голов."))
+
+    assert "число 9" in text
+    assert "total" in text
+    assert "total" not in describe(check("Гол на 12:34."))

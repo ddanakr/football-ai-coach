@@ -21,6 +21,8 @@ from aicoach.fusion.stage import RESULT_FILE as CANDIDATES_FILE
 from aicoach.plate_names.lineup import LINEUP_FILE, Player, load_lineup, parse_team_names
 from aicoach.plate_names.schemas import PlateNamesResult, PlayerRead
 from aicoach.plate_names.stage import RESULT_FILE as PLATE_NAMES_FILE
+from aicoach.plates.schemas import PlatesResult
+from aicoach.plates.stage import RESULT_FILE as PLATES_FILE
 from aicoach.scoreboard.config import ScoreboardConfig
 from aicoach.scoreboard.mapping import clock_at
 from aicoach.scoreboard.schemas import OffsetSegment, ScoreboardResult
@@ -53,6 +55,9 @@ class EventFacts:
     minute: int | None
     minute_text: str | None
     players: tuple[PlayerRead, ...] = ()
+    # A foul that a card plate made: "yellow", or "other" (a colour that is not yellow; the red
+    # card was never seen in the data, so "other" is not claimed to be red). None: no card plate.
+    card: str | None = None
 
 
 @dataclass(frozen=True)
@@ -133,6 +138,40 @@ def _read_players(
     return found
 
 
+@lru_cache(maxsize=4)
+def _read_cards(
+    candidates: Path,
+    plates: Path,
+    stamp: tuple[int, int],  # noqa: ARG001 - only part of the cache key
+) -> dict[PlayerKey, str]:
+    """Card colour of every foul that a card plate made (key: type and time of the event)."""
+    events = CandidatesResult.model_validate_json(candidates.read_text(encoding="utf-8"))
+    board = PlatesResult.model_validate_json(plates.read_text(encoding="utf-8"))
+    by_plate = {p.id: p for p in board.plates if p.type == "card"}
+    found: dict[PlayerKey, str] = {}
+    for candidate in events.candidates:
+        for evidence in candidate.evidence:
+            plate = by_plate.get(evidence.ref) if evidence.kind == "plate" else None
+            if (
+                candidate.type == EventType.FOUL
+                and plate is not None
+                and math.isclose(plate.t_first_seen, evidence.t_v, abs_tol=1e-6)
+            ):
+                found[(candidate.type, candidate.t_v)] = plate.card_color or "other"
+                break
+    return found
+
+
+def _cards_by_event(match_dir: Path) -> dict[PlayerKey, str]:
+    candidates, plates = match_dir / CANDIDATES_FILE, match_dir / PLATES_FILE
+    try:
+        stamp = (candidates.stat().st_mtime_ns, plates.stat().st_mtime_ns)
+        return _read_cards(candidates, plates, stamp)
+    except (OSError, ValueError) as err:
+        logger.warning("agent_no_cards", stage="agent", reason=type(err).__name__)
+        return {}
+
+
 def _players_by_event(match_dir: Path) -> dict[PlayerKey, tuple[PlayerRead, ...]]:
     candidates, names = match_dir / CANDIDATES_FILE, match_dir / PLATE_NAMES_FILE
     try:
@@ -185,6 +224,7 @@ def build_facts(
     segments: tuple[OffsetSegment, ...],
     players: Mapping[PlayerKey, tuple[PlayerRead, ...]],
     max_extrapolation_s: float,
+    cards: Mapping[PlayerKey, str] | None = None,
 ) -> tuple[EventFacts, ...]:
     """Attach the game minute and the plate names to the events (pure)."""
     facts: list[EventFacts] = []
@@ -192,7 +232,8 @@ def build_facts(
         minute = game_minute(clock_at(segments, event.t_v, max_extrapolation_s))
         # A user-added event never gets a name; a moved or retyped one has another key.
         names = () if event.origin == "user" else players.get((event.type, event.t_v), ())
-        facts.append(EventFacts(event, minute, minute_text(minute, event.half), names))
+        card = None if event.origin == "user" else (cards or {}).get((event.type, event.t_v))
+        facts.append(EventFacts(event, minute, minute_text(minute, event.half), names, card))
     return tuple(facts)
 
 
@@ -212,7 +253,13 @@ def load_context(db_path: Path, match_id: str, match_dir: Path) -> MatchContext:
     events = [with_derived_half(e, bounds) for e in stored]
     max_extrapolation_s = ScoreboardConfig().timeline.max_extrapolation_s
     segments = _segments(match_dir)
-    facts = build_facts(events, segments, _players_by_event(match_dir), max_extrapolation_s)
+    facts = build_facts(
+        events,
+        segments,
+        _players_by_event(match_dir),
+        max_extrapolation_s,
+        _cards_by_event(match_dir),
+    )
     lineup, team_names = _lineup(match_dir)
     return MatchContext(
         match_id=match_id,

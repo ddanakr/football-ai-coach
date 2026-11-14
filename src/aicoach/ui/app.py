@@ -67,7 +67,7 @@ from aicoach.ui.logic import (
 )
 from aicoach.youtube import watch_url
 
-PLAYER_COLUMNS = [1, 4, 1]  # the player sits in the middle one, it is not stretched over the page
+TOP_COLUMNS = [3, 2]  # the video on the left, the agent panel on the right (D-062)
 TABLE_HEIGHT_PX = 380
 TABLE_KEY = "events_table"
 _SELECTED = "selected_event_id"  # id of the chosen event, not its row: rows move after an edit
@@ -542,8 +542,9 @@ def main() -> None:
         st.session_state[_SELECTED] = None  # deleted, undone, or replaced by a new run
 
     shown = filter_events(events, _sidebar(events))
-    player_slot = st.container()  # filled below the table code: the pick is known only then
-    agent_slot = st.container()  # the agent panel sits between the player and the table
+    # Filled below the table code (the pick is known only then): the video on the left, the
+    # agent panel on the right, the table full width under both.
+    player_slot, agent_slot = st.columns(TOP_COLUMNS)
     st.caption(ru.SHOWN.format(shown=len(shown), total=len(events)))
     if shown:
         rows = to_rows(shown, load_player_texts(args.results_dir))
@@ -552,9 +553,7 @@ def main() -> None:
         st.info(ru.NOTHING_MATCHES)
     selected = by_id.get(st.session_state[_SELECTED])
     with player_slot:
-        _, middle, _ = st.columns(PLAYER_COLUMNS)
-        with middle:
-            _render_player(args, selected)
+        _render_player(args, selected)
     with agent_slot:
         render_agent_panel(args, _select_event)
     _render_edit_panel(args, selected, n_edits)

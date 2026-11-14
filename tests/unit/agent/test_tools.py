@@ -365,3 +365,77 @@ def test_digits_of_an_event_id_or_a_limit_in_the_arguments_are_not_seen_numbers(
     tools2 = box()
     tools2.call("get_event", {"event_id": "p:99"})
     assert 99.0 not in tools2.seen_numbers
+
+
+@pytest.mark.unit
+def test_a_foul_with_a_card_plate_shows_the_card_and_the_name_from_the_plate() -> None:
+    event = box().call("get_event", {"event_id": "p:4"})["event"]
+
+    assert event["card"] == "yellow"
+    assert event["players"][0]["name"] == "Образцов Марат"
+    assert "card" not in box().call("get_event", {"event_id": "p:1"})["event"]
+
+
+@pytest.mark.unit
+def test_query_events_card_filter_keeps_only_fouls_with_a_card() -> None:
+    assert ids(box().call("query_events", {"card": True})) == ["p:4"]
+    assert "p:4" not in ids(box().call("query_events", {"card": False}))
+
+
+@pytest.mark.unit
+def test_match_info_counts_the_cards_by_colour() -> None:
+    assert box().call("match_info", {})["cards"] == {"yellow": 1, "other_color": 0}
+
+
+@pytest.mark.unit
+def test_find_player_shows_the_cards_of_the_player() -> None:
+    (player,) = box().call("find_player", {"query": "Образцов"})["players"]
+
+    assert player["yellow_cards"] == 1
+    assert [e["card"] for e in player["events"] if "card" in e] == ["yellow"]
+
+
+@pytest.mark.unit
+def test_a_substitution_names_who_came_on_and_who_went_off_or_none_when_unread() -> None:
+    event = box().call("get_event", {"event_id": "p:5"})["event"]
+
+    assert event["substitution"] == {"came_on": "Нұрланов Ұлан", "went_off": None}
+    assert "substitution" not in box().call("get_event", {"event_id": "p:1"})["event"]
+
+
+@pytest.mark.unit
+def test_side_filter_reports_the_events_whose_team_is_unknown_instead_of_hiding_them() -> None:
+    result = box().call("query_events", {"type": "shot", "side": "home"})
+
+    assert ids(result) == ["p:1"]
+    assert result["team_unknown"] == 1  # the shot p:7 has no team
+    assert "команда не определена" in result["team_unknown_note"]
+
+
+@pytest.mark.unit
+def test_side_filter_with_nothing_but_unknown_team_events_says_so() -> None:
+    result = box().call("query_events", {"type": "foul", "side": "away"})
+
+    assert (result["total"], result["team_unknown"]) == (0, 1)
+
+
+@pytest.mark.unit
+def test_no_team_unknown_flag_without_a_side_filter_or_with_side_unknown() -> None:
+    assert "team_unknown" not in box().call("query_events", {"type": "shot"})
+    assert "team_unknown" not in box().call("query_events", {"type": "shot", "side": "unknown"})
+
+
+@pytest.mark.unit
+def test_without_known_minute_is_counted_for_the_asked_side_only() -> None:
+    result = box().call("query_events", {"type": "shot", "side": "home", "minute_from": 0})
+
+    assert ids(result) == ["p:1"]
+    assert "without_known_minute" not in result  # p:7 has no minute but no team either
+
+
+@pytest.mark.unit
+def test_team_unknown_is_counted_over_all_fitting_events_not_only_the_shown_ones() -> None:
+    result = box().call("query_events", {"side": "home", "limit": 1})
+
+    assert result["returned"] == 1
+    assert result["team_unknown"] == 2  # p:4 and p:7

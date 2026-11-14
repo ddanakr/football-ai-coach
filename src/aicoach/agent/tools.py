@@ -24,6 +24,7 @@ from aicoach.agent.validator import numbers_in
 from aicoach.clips import DEFAULT_AFTER_S, DEFAULT_BEFORE_S
 from aicoach.domain.events import EventType
 from aicoach.errors import ExportError
+from aicoach.plate_names.schemas import PlayerRead
 
 logger = structlog.get_logger()
 
@@ -50,6 +51,7 @@ class QueryEventsArgs(_Args):
     minute_to: int | None = Field(default=None, ge=0, le=200)
     side: Literal["home", "away", "unknown"] | None = None
     player: str | None = Field(default=None, max_length=100)
+    card: bool | None = None
     limit: int = Field(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT)
 
 
@@ -109,6 +111,10 @@ QUERY_EVENTS = _spec(
             "description": "home (хозяева), away (гости) или unknown (команда не определена)",
         },
         "player": {"type": "string", "description": "фамилия игрока (как её пишет пользователь)"},
+        "card": {
+            "type": "boolean",
+            "description": "true: только фолы, за которые показана карточка (по плашке)",
+        },
         "limit": {"type": "integer", "description": f"сколько вернуть, до {MAX_LIMIT}"},
     },
     [],
@@ -189,7 +195,22 @@ def event_json(facts: EventFacts, team_names: Mapping[str, str]) -> Result:
         ]
     if len(named) < len(facts.players):
         result["unrecognized_names"] = len(facts.players) - len(named)
+    if facts.card is not None:
+        result["card"] = facts.card  # "yellow", or "other" (not yellow, red is not confirmed)
+    if event.type == EventType.SUBST:
+        result["substitution"] = _substitution(facts.players)
     return result
+
+
+def _substitution(players: tuple[PlayerRead, ...]) -> Result:
+    """Who came on and who went off, from the two lines of the substitution plate; a name that
+    could not be read is `None`."""
+    names: Result = {"came_on": None, "went_off": None}
+    for p in players:
+        key = "came_on" if p.role == "in" else "went_off" if p.role == "out" else None
+        if key is not None:
+            names[key] = p.name
+    return names
 
 
 def _has_player(facts: EventFacts, query: str) -> bool:
@@ -276,6 +297,10 @@ class ToolBox:
             "events_total": len(events),
             "events_by_type": _count_by(events, lambda f: str(f.event.type)),
             "events_by_half": _count_by(events, lambda f: str(f.event.half or "unknown")),
+            "cards": {
+                "yellow": sum(f.card == "yellow" for f in events),
+                "other_color": sum(f.card == "other" for f in events),
+            },
             "note": ACCURACY_NOTE,
         }
 
@@ -283,11 +308,17 @@ class ToolBox:
         a = QueryEventsArgs.model_validate(args)
         if a.minute_from is not None and a.minute_to is not None and a.minute_from > a.minute_to:
             return {"error": "minute_from больше minute_to"}
-        rows = [f for f in self.ctx.events if self._passes(f, a)]
+        # Every filter except the side first: the events whose team is unknown must be counted
+        # when the side is asked for, so that "no shots" is not said about "shots of unknown team".
+        fitting = [f for f in self.ctx.events if self._passes(f, a)]
         by_minute = a.minute_from is not None or a.minute_to is not None
-        without_minute = sum(f.minute is None for f in rows) if by_minute else 0
+        without_minute = 0
         if by_minute:
-            rows = [f for f in rows if f.minute is not None and self._in_minutes(f.minute, a)]
+            # Counted for the asked side only, like `total`.
+            without_minute = sum(f.minute is None for f in fitting if self._side_fits(f, a.side))
+        if by_minute:
+            fitting = [f for f in fitting if f.minute is not None and self._in_minutes(f.minute, a)]
+        rows = [f for f in fitting if self._side_fits(f, a.side)]
         shown = rows[: a.limit]
         result: Result = {
             "total": len(rows),
@@ -299,18 +330,30 @@ class ToolBox:
             result["truncated"] = True
         if without_minute:
             result["without_known_minute"] = without_minute  # not in `total`: no clock there
+        unknown_team = sum(f.event.team is None for f in fitting)
+        if a.side in _SIDES and unknown_team:
+            result["team_unknown"] = unknown_team
+            result["team_unknown_note"] = (
+                f"у {unknown_team} подходящих событий команда не определена: они не вошли в total "
+                "(вызови query_events с side=unknown, чтобы увидеть их)"
+            )
         return result
 
     @staticmethod
+    def _side_fits(facts: EventFacts, side: str | None) -> bool:
+        if side is None:
+            return True
+        return facts.event.team is None if side == "unknown" else facts.event.team == side
+
+    @staticmethod
     def _passes(facts: EventFacts, a: QueryEventsArgs) -> bool:
+        """All filters except the side and the minutes."""
         event = facts.event
         if a.type is not None and event.type != a.type:
             return False
         if a.half is not None and event.half != a.half:
             return False
-        if a.side == "unknown" and event.team is not None:
-            return False
-        if a.side in _SIDES and event.team != a.side:
+        if a.card is not None and (facts.card is not None) != a.card:
             return False
         return a.player is None or _has_player(facts, a.player)
 
@@ -374,6 +417,7 @@ class ToolBox:
                     "side": player.side,
                     "team_name": self.ctx.team_names[player.side],
                     "number": player.number,
+                    "yellow_cards": sum(e.get("card") == "yellow" for e in events),
                     "events": events,
                 }
             )
@@ -394,6 +438,7 @@ class ToolBox:
                 "side": None,
                 "number": None,
                 "from_plates_only": True,
+                "yellow_cards": sum(f.card == "yellow" for f in dict.fromkeys(events)),
                 "events": [self._emit(f) for f in dict.fromkeys(events)],
             }
             for name, events in list(grouped.items())[:MAX_PLAYERS]

@@ -216,3 +216,36 @@ def test_load_context_derives_the_half_of_an_event_added_by_the_user(tmp_path: P
 
     assert [f.event.half for f in added] == [1]
     assert added[0].players == ()
+
+
+@pytest.mark.unit
+def test_load_context_marks_the_foul_made_by_a_card_plate(tmp_path: Path) -> None:
+    db = write_match_dir(tmp_path, "m1")
+
+    events = load_context(db, "m1", tmp_path).events
+
+    assert [(str(f.event.type), f.card) for f in events] == [
+        ("goal", None),
+        ("subst", None),
+        ("foul", "yellow"),
+    ]
+
+
+@pytest.mark.unit
+def test_load_context_without_plates_file_has_no_cards(tmp_path: Path) -> None:
+    db = write_match_dir(tmp_path, "m1")
+    (tmp_path / "plates.json").unlink()
+
+    assert [f.card for f in load_context(db, "m1", tmp_path).events] == [None, None, None]
+
+
+@pytest.mark.unit
+def test_a_foul_moved_or_added_by_the_user_has_no_card() -> None:
+    card = {(EventType.FOUL, 100.0): "yellow"}
+    moved = make_event("p:1", EventType.FOUL, 101.0)
+    added = make_event("e:1", EventType.FOUL, 100.0, source=None)
+    kept = make_event("p:2", EventType.FOUL, 100.0)
+
+    facts = build_facts([moved, added, kept], SEGMENTS, {}, 30.0, card)
+
+    assert [f.card for f in facts] == [None, None, "yellow"]

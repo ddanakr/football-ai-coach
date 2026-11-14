@@ -172,8 +172,16 @@ def find_violations(
 def describe(violations: list[Violation]) -> str:
     """The retry message for the model: what was wrong and how to fix it."""
     listed = "; ".join(v.detail for v in violations[:MAX_LISTED])
+    hint = ""
+    if any(v.code == "unknown_number" for v in violations):
+        # The usual cause is a count the model made itself (per half, per team): the tool can
+        # return exactly that number if it is asked with the right filter.
+        hint = (
+            " Число, которого нет в результатах, получи у инструмента: вызови query_events с "
+            "нужными фильтрами (half, side, type) и назови его поле total; или не называй число."
+        )
     return (
         f"Ответ отклонён проверкой: {listed}. Перепиши ответ: ссылки [E:<id>] только на id из "
         "результатов инструментов этого разговора, без времени, секунд и адресов, фамилии "
-        "и числа (цифрами) только из результатов инструментов. Если данных нет, так и скажи."
+        "и числа (цифрами) только из результатов инструментов. Если данных нет, так и скажи." + hint
     )

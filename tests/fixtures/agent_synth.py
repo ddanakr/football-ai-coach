@@ -49,6 +49,7 @@ def make_event(
     origin: str = "prediction",
     status: str = "auto",
     score: float | None = 1.0,
+    card: str | None = None,
 ) -> EventFacts:
     """One event with its game minute and plate names."""
     event = CurrentEvent.model_validate(
@@ -68,7 +69,7 @@ def make_event(
             "n_edits": 0,
         }
     )
-    return EventFacts(event, minute, minute_text(minute, half), tuple(players))
+    return EventFacts(event, minute, minute_text(minute, half), tuple(players), card)
 
 
 def make_context(*, lineup: bool = True) -> MatchContext:
@@ -77,7 +78,9 @@ def make_context(*, lineup: bool = True) -> MatchContext:
         make_event(1, EventType.SHOT, 600.0, 1, 5, "home"),
         make_event(2, EventType.GOAL, 1500.0, 1, 23, "home", [read(TESTOV.name)]),
         make_event(3, EventType.CORNER, 1900.0, 1, 30, "away"),
-        make_event(4, EventType.FOUL, 2600.0, 1, 46, None, [read(OBRAZTSOV.name)]),  # 45+1
+        make_event(
+            4, EventType.FOUL, 2600.0, 1, 46, None, [read(OBRAZTSOV.name)], card="yellow"
+        ),  # 45+1, yellow card by a plate, team unknown
         make_event(
             5,
             EventType.SUBST,

@@ -96,3 +96,17 @@ def test_clear_button_empties_the_history(monkeypatch: pytest.MonkeyPatch, tmp_p
     app.button(key="agent_clear").click().run()
 
     assert app.session_state[HISTORY_KEY] == []
+
+
+@pytest.mark.unit
+def test_the_panel_has_the_alignment_style_once_and_one_question_box(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    write_match_dir(tmp_path, MATCH)
+    app = start(monkeypatch, tmp_path, FakeLLM([]))
+
+    styles = [m for m in app.markdown if "stChatMessageAvatarUser" in m.value]
+
+    assert len(styles) == 1
+    assert len(app.chat_input) == 1
+    assert not app.exception
