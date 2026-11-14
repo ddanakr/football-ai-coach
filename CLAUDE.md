@@ -64,7 +64,7 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 ├── configs/            # план: пороги, окна NMS, лексиконы, шаблоны плашек (yaml); пока пороги лежат в pydantic-моделях стадий (D-031)
 ├── docs/               # TZ.md; протокол разметки
 ├── src/aicoach/
-│   ├── cli.py          # точка входа: python -m aicoach.cli <команда>; команды: scoreboard, scoreboard-calibrate, plates, spotting-eval, fuse, run, ui, clip
+│   ├── cli.py          # точка входа: python -m aicoach.cli <команда>; команды: scoreboard, scoreboard-calibrate, plates, plate-names, spotting-eval, fuse, run, ingest, ui, clip
 │   ├── pipeline.py     # команда `run`: scoreboard, plates, fusion по порядку, статус `run` в status.json; модели в ней нет
 │   ├── status.py       # status.json каталога матча: состояние стадий (running, done, failed) и прогресс
 │   ├── stage_common.py # общие помощники стадий: атомарная запись, статус, прогресс, запись сбоя
@@ -72,6 +72,7 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 │   ├── errors.py       # иерархия исключений
 │   ├── logging_setup.py  # structlog, JSON-строки в stderr
 │   ├── config.py       # read_gemini_api_key: ключ Gemini из `.env` в корне (D-057)
+│   ├── youtube.py      # id видео YouTube (проверка: 11 знаков) и плоская ссылка просмотра; общий для ingest и ui
 │   ├── i18n/           # тексты интерфейса: ru.py (казахский: план)
 │   ├── domain/         # события и категории (events.py)
 │   ├── scoreboard/     # стадия табло: часы, счёт, смены счёта, добавленное время, соответствие t_v и минуты
@@ -87,6 +88,11 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 │   │   ├── detect.py  layout.py   # чтение кадра по цвету и форме; положение частей плашки долями кадра
 │   │   ├── tracks.py  logos.py  teams.py  assemble.py   # склейка кадров в плашки, кластеры логотипов, команда по смене счёта, чистая сборка результата
 │   │   └── config.py  schemas.py   # пороги и окна; pydantic-модели plates.json
+│   ├── plate_names/    # стадия фамилий с плашек (D-059): Tesseract kaz+rus по вырезкам `plate_crops/`, необязательная сверка с составом `lineups.csv`; Tesseract внешняя программа, без неё шаг пропускается
+│   │   ├── stage.py        # запуск стадии, кэш по ключу, plate_names.json, статусы `done` и `skipped`; в predictions и edits не пишет
+│   │   ├── reader.py  layout.py   # подготовка строки и вызов Tesseract (`NameReader`); положение строк текста в вырезке долями вырезки
+│   │   ├── text.py  lineup.py  assemble.py   # ключ имени и чистка текста; загрузчик состава и поиск игрока своей стороны; чистая сборка имён плашки
+│   │   └── schemas.py      # pydantic-модели plate_names.json и параметры стадии
 │   ├── storage/        # SQLite-хранилище событий: db.py, schema.py, models.py, repository.py (миграций нет, версия схемы 1)
 │   ├── eval/           # сопоставление, метрики, bootstrap, схемы входа, отчёт в Markdown
 │   ├── spotting/       # адаптер предсказаний ветки B: файл T-DEED (код T-DEED не копируется, D-046), только 1-й тайм (D-045)
@@ -113,6 +119,7 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 │       ├── logic.py        # чистые функции: фильтры, mm:ss, подписи, youtube_link, строки таблицы, выбор строки → событие
 │       ├── edits.py        # чистая логика ручных правок: разбор мм:сс, проверка времени по границам таймов и длине видео, сборка правки
 │       ├── launch.py       # аргументы скрипта после `--` и команда запуска streamlit; ID видео только аргумент процесса
+│       ├── ingest_jobs.py  # блок «Новый матч»: фоновый запуск `ingest` отдельным процессом с журналом, список шагов из status.json, сохранение загруженного lineups.csv
 │       └── data.py         # события, запись правок в журнал edits и границы таймов через слой хранилища
 ├── tests/              # структура в TESTING.md
 ├── data_labels/        # эталон разметки: JSON-файлы формата GroundTruth (D-040), в git
