@@ -11,7 +11,8 @@ from aicoach.logging_setup import stage_logger
 
 STATUS_FILE = "status.json"
 # "waiting": the stage needs a file a person brings (the T-DEED output of the notebook).
-State = Literal["running", "done", "failed", "waiting"]
+# "skipped": an optional step that cannot run here (no Tesseract); `error` tells why.
+State = Literal["running", "done", "failed", "waiting", "skipped"]
 
 
 class StageStatus(BaseModel):

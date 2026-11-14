@@ -127,8 +127,16 @@ def test_run_ingest_with_tdeed_file_runs_every_step_and_ends_done(
     assert fakes.downloader.urls == [f"https://www.youtube.com/watch?v={VID}"]
     assert (match_dir / AUDIO_FILE).is_file()
     assert (match_dir / TEMPLATES_DIR / "score" / "0_a.png").is_file()
-    assert [c[0] for c in fakes.stages.calls] == ["scoreboard", "plates", "fusion"]
-    fusion_args = fakes.stages.calls[2][1]
+    assert [c[0] for c in fakes.stages.calls] == [
+        "scoreboard",
+        "plates",
+        "plate_names",
+        "fusion",
+    ]
+    names_args = fakes.stages.calls[2]
+    assert names_args[1][0] == match_dir
+    assert names_args[2] == {"force": False}
+    fusion_args = fakes.stages.calls[3][1]
     assert fusion_args[0] == match_dir
     assert fusion_args[2] == match_dir / "tdeed_small.json"
     assert states(match_dir) == {
@@ -148,7 +156,8 @@ def test_run_ingest_without_tdeed_waits_then_resumes_without_redoing_ready_steps
 
     assert first.waiting_for_tdeed
     assert first.fusion is None
-    assert [c[0] for c in fakes.stages.calls] == ["scoreboard", "plates"]
+    # The names come before the wait: they are there while the model output is missing.
+    assert [c[0] for c in fakes.stages.calls] == ["scoreboard", "plates", "plate_names"]
     assert states(first.match_dir)["tdeed"] == "waiting"
     assert states(first.match_dir)[STAGE] == "waiting"
     assert not (first.match_dir / LOCK_FILE).exists()
@@ -160,7 +169,7 @@ def test_run_ingest_without_tdeed_waits_then_resumes_without_redoing_ready_steps
     assert not second.waiting_for_tdeed
     assert again.downloader.urls == []  # src.mp4 is there
     assert again.ffmpeg.calls == 0  # audio.wav is there
-    assert [c[0] for c in again.stages.calls] == ["scoreboard", "plates", "fusion"]
+    assert [c[0] for c in again.stages.calls] == ["scoreboard", "plates", "plate_names", "fusion"]
     assert states(second.match_dir)["tdeed"] == "done"
     assert states(second.match_dir)[STAGE] == "done"
 
@@ -233,6 +242,20 @@ def test_run_ingest_failing_stage_is_named_and_later_steps_do_not_run(
 
 
 @pytest.mark.unit
+def test_run_ingest_failing_plate_names_stops_before_the_wait_for_tdeed(
+    tmp_path: Path, fakes: Fakes
+) -> None:
+    fakes.stages = Recorder(fail_at="plate_names", error=PlatesError("bad lineups.csv"))
+
+    with pytest.raises(PlatesError, match="stage plate_names failed: bad lineups.csv"):
+        ingest(tmp_path, fakes)
+
+    assert [c[0] for c in fakes.stages.calls] == ["scoreboard", "plates", "plate_names"]
+    assert "tdeed" not in states(tmp_path / "data" / VID)
+    assert states(tmp_path / "data" / VID)[STAGE] == "failed"
+
+
+@pytest.mark.unit
 def test_run_ingest_without_templates_fails_before_downloading(
     tmp_path: Path, fakes: Fakes
 ) -> None:
@@ -292,7 +315,7 @@ def test_run_ingest_broken_tdeed_file_fails_the_tdeed_step(tmp_path: Path, fakes
         ingest(tmp_path, fakes)
 
     assert states(match_dir)["tdeed"] == "failed"
-    assert [c[0] for c in fakes.stages.calls] == ["scoreboard", "plates"]
+    assert [c[0] for c in fakes.stages.calls] == ["scoreboard", "plates", "plate_names"]
 
 
 @pytest.mark.unit

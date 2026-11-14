@@ -1,7 +1,8 @@
 """The `ingest` command: a YouTube link to events in the database (FR-1, FR-2).
 
 Steps, each with its own entry in `status.json` of the match directory: `download` (yt-dlp,
-frame size check), `audio` (16 kHz mono WAV), `scoreboard`, `plates`, `tdeed` (the model output
+frame size check), `audio` (16 kHz mono WAV), `scoreboard`, `plates`, `plate_names` (player names
+read from the plate crops, skipped when Tesseract is missing), `tdeed` (the model output
 brought from the notebook) and `fuse`. The `ingest` entry tells the whole state. Every step
 skips what is ready, so a repeated ingest continues where the last one stopped. Without the
 T-DEED file the command stops with the `tdeed` step `waiting` (D-058).
@@ -32,7 +33,7 @@ from aicoach.spotting.schemas import load_tdeed_file
 from aicoach.stage_common import Logger, Progress, elapsed_ms, record_failure, set_status
 
 STAGE = "ingest"
-STEPS = ("download", "audio", "scoreboard", "plates", "tdeed", "fuse")
+STEPS = ("download", "audio", "scoreboard", "plates", "plate_names", "tdeed", "fuse")
 TDEED_STEP = "tdeed"
 TDEED_PATTERN = "tdeed_*.json"
 EXIT_WAITING_TDEED = 3  # exit code of the command while the T-DEED file is missing
@@ -230,6 +231,9 @@ def _run(job: _Job) -> IngestResult:
             video, job.match_id, PlatesConfig(hw_accel=job.hw_accel), force=False
         ),
     )
+    # Optional: without Tesseract the step records "skipped" and the ingest goes on. It comes
+    # before the T-DEED wait, so the names are there while the model output is still missing.
+    job.step("plate_names", lambda: tools.stages.plate_names(d, job.match_id, force=False))
     # The lookup is a step of its own, so a failure (two files) is recorded; "waiting" below
     # replaces its "done" entry.
     tdeed = job.step(

@@ -9,6 +9,8 @@ from pydantic import ValidationError
 from aicoach.errors import StorageError
 from aicoach.fusion.schemas import CandidatesResult
 from aicoach.fusion.stage import RESULT_FILE as CANDIDATES_FILE
+from aicoach.plate_names.schemas import PlateNamesResult
+from aicoach.plate_names.stage import RESULT_FILE as PLATE_NAMES_FILE
 from aicoach.scoreboard.schemas import ScoreboardResult
 from aicoach.scoreboard.stage import RESULT_FILE as SCOREBOARD_FILE
 from aicoach.storage import (
@@ -21,6 +23,7 @@ from aicoach.storage import (
     undo_last_edit,
 )
 from aicoach.ui.edits import EditPlan, TimeBounds
+from aicoach.ui.logic import PlayerKey, player_texts
 
 # Who the journal names as the author of an edit made in the viewer.
 EDIT_AUTHOR = "ui"
@@ -131,3 +134,39 @@ def load_time_bounds(match_dir: Path) -> TimeBounds | None:
         logger.warning("time_bounds_unavailable", stage="ui", reason="missing", path=str(match_dir))
         return None
     return _read_bounds(candidates, board, stamp)
+
+
+@lru_cache(maxsize=4)
+def _read_players(
+    candidates: Path,
+    names: Path,
+    stamp: tuple[int, int],  # noqa: ARG001 - only part of the cache key
+) -> dict[PlayerKey, str]:
+    """Parse the two files; `stamp` (their modification times) only keys the cache."""
+    try:
+        events = CandidatesResult.model_validate_json(candidates.read_text(encoding="utf-8"))
+        read = PlateNamesResult.model_validate_json(names.read_text(encoding="utf-8"))
+    except (OSError, ValidationError) as err:
+        logger.warning(
+            "player_names_unavailable",
+            stage="ui",
+            reason=type(err).__name__,
+            path=str(candidates.parent),
+        )
+        return {}
+    return player_texts(events.candidates, read.names)
+
+
+def load_player_texts(match_dir: Path) -> dict[PlayerKey, str]:
+    """The player texts of the match's events (`candidates.json` joined with
+    `plate_names.json` by the plate id); empty when either file is missing or invalid.
+
+    The names are optional: a match without them (no Tesseract, step not run) simply has an
+    empty "player" column. The result is cached until one of the files changes.
+    """
+    candidates, names = match_dir / CANDIDATES_FILE, match_dir / PLATE_NAMES_FILE
+    try:
+        stamp = (candidates.stat().st_mtime_ns, names.stat().st_mtime_ns)
+    except OSError:
+        return {}
+    return _read_players(candidates, names, stamp)

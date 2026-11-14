@@ -24,6 +24,8 @@ from aicoach.ingest.download import VIDEO_FILE
 from aicoach.ingest.stage import EXIT_WAITING_TDEED, run_ingest
 from aicoach.logging_setup import configure_logging
 from aicoach.pipeline import run_pipeline
+from aicoach.plate_names.stage import STAGE as PLATE_NAMES_STAGE
+from aicoach.plate_names.stage import run_plate_names
 from aicoach.plates.config import PlatesConfig
 from aicoach.plates.stage import run_plates
 from aicoach.scoreboard.config import ScoreboardConfig
@@ -36,6 +38,7 @@ from aicoach.scoreboard.stage import (
 from aicoach.spotting.convert import DEFAULT_FPS, DEFAULT_MERGE_RADIUS_S
 from aicoach.spotting.evaluation import DEFAULT_THRESHOLDS, DEVELOPMENT_HALF, format_evaluation
 from aicoach.spotting.run import DEFAULT_GROUND_TRUTH, run_spotting_eval
+from aicoach.status import read_status
 from aicoach.ui.launch import AppArgs, StartArgs, build_streamlit_command
 from aicoach.youtube import validate_video_id
 
@@ -64,6 +67,16 @@ def build_parser() -> argparse.ArgumentParser:
     plates.add_argument("--force", action="store_true", help="ignore an up-to-date result")
     plates.add_argument("--sample-fps", type=float, help="frames per second to read (default 2)")
     plates.add_argument("--cpu", action="store_true", help="decode on the CPU (very slow for AV1)")
+
+    names = commands.add_parser(
+        "plate-names", help="read player names from the plate crops (Tesseract; needs plates.json)"
+    )
+    names.add_argument("--video", type=Path, required=True, help="path of the match video")
+    names.add_argument("--match-id", help="default: name of the video's directory")
+    names.add_argument(
+        "--lineups", type=Path, help="lineups.csv (default: lineups.csv by the video, if present)"
+    )
+    names.add_argument("--force", action="store_true", help="ignore an up-to-date result")
 
     fuse = commands.add_parser(
         "fuse", help="merge scoreboard, plates and model events into the database"
@@ -223,6 +236,26 @@ def _plates(args: argparse.Namespace) -> int:
     return 0
 
 
+def _plate_names(args: argparse.Namespace) -> int:
+    """Exit code 0 also when the step is skipped for want of Tesseract (the reason is shown)."""
+    match_dir = args.video.parent
+    result = run_plate_names(match_dir, _match_id(args), lineup_path=args.lineups, force=args.force)
+    if result is None:
+        reason = read_status(match_dir).stages[PLATE_NAMES_STAGE].error
+        sys.stdout.write(f"plate_names skipped: {reason}\n")
+        return 0
+    stats = result.stats
+    source = f"lineup {result.lineup}" if result.lineup else "no lineup (names are not checked)"
+    sys.stdout.write(
+        f"plate_names.json: {stats.n_plates} plates, {stats.n_names} names: "
+        f"{stats.n_matched} matched, {stats.n_unchecked} unchecked, "
+        f"{stats.n_unrecognized} unrecognized; {source}\n"
+    )
+    for text in result.warnings:
+        sys.stdout.write(f"  warning: {text}\n")
+    return 0
+
+
 def _report_fusion(result: CandidatesResult) -> None:
     counts = ", ".join(
         f"{kind} {sum(by_half.values())} (1st half {by_half.get('1', 0)}, "
@@ -374,6 +407,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _scoreboard(args)
         if args.command == "plates":
             return _plates(args)
+        if args.command == "plate-names":
+            return _plate_names(args)
         if args.command == "spotting-eval":
             return _spotting_eval(args)
         if args.command == "fuse":

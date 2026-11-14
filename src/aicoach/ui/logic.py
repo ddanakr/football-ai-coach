@@ -5,12 +5,14 @@ No Streamlit and no I/O here, so it is tested on its own and the agent can reuse
 """
 
 import math
-from collections.abc import Collection, Iterable, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
 from aicoach.domain.events import EventType
+from aicoach.fusion.schemas import Candidate
 from aicoach.i18n import ru
+from aicoach.plate_names.schemas import PlateNames, PlayerRead
 from aicoach.storage import CurrentEvent
 from aicoach.youtube import WATCH_URL, validate_video_id
 
@@ -18,6 +20,11 @@ from aicoach.youtube import WATCH_URL, validate_video_id
 PLAYER_PRE_ROLL_S = 5.0
 
 HalfFilter = Literal[1, 2] | None
+# Event key under which the player text is stored: the type and `t_v` the fusion stage gave it.
+PlayerKey = tuple[EventType, float]
+_PLATE_TIME_TOL_S = 1e-6  # the same plate has the same first-seen time in both files
+# The plate type whose names belong to an event type (a card plate gives a foul).
+_PLATE_OF_EVENT = {EventType.GOAL: "goal", EventType.FOUL: "card", EventType.SUBST: "subst"}
 
 
 def _whole_seconds(t_v: float) -> int:
@@ -110,6 +117,7 @@ class EventRow:
     team_text: str
     status_text: str
     edit_text: str = ""
+    player_text: str = ""
 
     @property
     def type_text(self) -> str:
@@ -124,8 +132,61 @@ def edit_mark(event: CurrentEvent) -> str:
     return ru.MARK_EDITED if event.n_edits else ""
 
 
-def to_row(event: CurrentEvent) -> EventRow:
-    """Format an event for the list; missing fields show as a dash."""
+def _name_text(read: PlayerRead) -> str:
+    return read.name or ru.PLAYER_UNRECOGNIZED
+
+
+def player_text(names: PlateNames) -> str:
+    """The "player" cell of an event from the names read on its plate.
+
+    A goal or a card plate gives the name; a substitution gives "came on X; left Y". A name that
+    is not checked against a lineup carries a note (once, at the end); a name that could not be
+    read or found in the lineup shows as "not recognized".
+    """
+    if names.type == "subst":
+        verbs = {"in": ru.PLAYER_WENT_ON, "out": ru.PLAYER_WENT_OFF}
+        text = "; ".join(f"{verbs.get(p.role, '')} {_name_text(p)}".strip() for p in names.players)
+    else:
+        text = "; ".join(_name_text(p) for p in names.players)
+    unchecked = any(p.status == "unchecked" for p in names.players)
+    return text + ru.PLAYER_UNCHECKED_MARK if unchecked else text
+
+
+def player_texts(
+    candidates: Iterable[Candidate], names: Iterable[PlateNames]
+) -> dict[PlayerKey, str]:
+    """The player text of every event that was built from a plate with read names.
+
+    The key is the type and time of the candidate, which the database row has as well (the
+    fusion stage stored them). The first plate of the right kind among the candidate's
+    evidence counts.
+    """
+    by_plate = {n.plate_id: n for n in names}
+    texts: dict[PlayerKey, str] = {}
+    for candidate in candidates:
+        for evidence in candidate.evidence:
+            found = by_plate.get(evidence.ref) if evidence.kind == "plate" else None
+            # The time check keeps names of an older `plates.json` (plate ids are renumbered when
+            # the stage runs again) from landing on the wrong plate.
+            if (
+                found is not None
+                and found.type == _PLATE_OF_EVENT.get(candidate.type)
+                and math.isclose(found.t_v, evidence.t_v, abs_tol=_PLATE_TIME_TOL_S)
+            ):
+                texts[(candidate.type, candidate.t_v)] = player_text(found)
+                break
+    return texts
+
+
+def to_row(event: CurrentEvent, players: Mapping[PlayerKey, str] | None = None) -> EventRow:
+    """Format an event for the list; missing fields show as a dash.
+
+    `players` gives the player texts by (type, `t_v`); an event added or moved by the user has
+    another key, so it gets no name, and one added by the user never does.
+    """
+    player = (
+        "" if event.origin == "user" or not players else players.get((event.type, event.t_v), "")
+    )
     return EventRow(
         event_id=event.event_id,
         t_v=event.t_v,
@@ -142,12 +203,15 @@ def to_row(event: CurrentEvent) -> EventRow:
         if event.status == "auto"
         else ru.STATUS_LABELS.get(event.status, event.status),
         edit_text=edit_mark(event),
+        player_text=player,
     )
 
 
-def to_rows(events: Collection[CurrentEvent]) -> list[EventRow]:
+def to_rows(
+    events: Collection[CurrentEvent], players: Mapping[PlayerKey, str] | None = None
+) -> list[EventRow]:
     """`to_row` for every event, order kept."""
-    return [to_row(e) for e in events]
+    return [to_row(e, players) for e in events]
 
 
 def _blank(text: str) -> str:
@@ -158,7 +222,7 @@ def table_records(rows: Sequence[EventRow]) -> list[dict[str, str | float | None
     """Rows of the events table, one dict per event; unknown values are empty.
 
     Keys are the Russian column names in display order: time, type, half, confidence, source,
-    team, edit mark. The order of the records is the order of `rows`, so a selected table
+    team, player, edit mark. The order of the records is the order of `rows`, so a selected table
     index is an index into `rows`.
     """
     return [
@@ -169,6 +233,7 @@ def table_records(rows: Sequence[EventRow]) -> list[dict[str, str | float | None
             ru.COLUMN_SCORE: row.score,
             ru.COLUMN_SOURCE: _blank(row.source_text),
             ru.COLUMN_TEAM: _blank(row.team_text),
+            ru.COLUMN_PLAYER: row.player_text,
             ru.COLUMN_EDIT: row.edit_text,
         }
         for row in rows

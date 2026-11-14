@@ -140,6 +140,12 @@ INGEST_HEADER = "Новый матч"
 INGEST_URL = "Ссылка на YouTube"
 INGEST_URL_HELP = "Например https://www.youtube.com/watch?v=… или https://youtu.be/…"
 INGEST_START = "Обработать"
+INGEST_LINEUPS = "Состав команд (lineups.csv), необязательно"
+INGEST_LINEUPS_HELP = (
+    "Колонки: team, side (home или away), number, name, position, started, minute_on, "
+    "minute_off. С составом фамилии на плашках сверяются с игроками своей команды."
+)
+INGEST_LINEUP_BAD = "Файл состава не принят: {error}"
 INGEST_NO_ROOT = (
     "Каталог данных не задан: запустите интерфейс с `--data-root <каталог>`, "
     "чтобы обрабатывать новые матчи."
@@ -159,6 +165,7 @@ INGEST_STEP_LABELS: dict[str, str] = {
     "audio": "Звук 16 кГц",
     "scoreboard": "Табло",
     "plates": "Плашки",
+    "plate_names": "Фамилии с плашек",
     "tdeed": "Файл T-DEED",
     "fuse": "Слияние в базу",
 }
@@ -168,8 +175,20 @@ INGEST_STATE_LABELS: dict[str, str] = {
     "done": "готово",
     "failed": "ошибка",
     "waiting": "ждёт T-DEED",
+    "skipped": "пропущено",
 }
 NO_MATCH_OPEN = (
     "Матч не открыт. Вставьте ссылку в блок «Новый матч» в боковой панели "
     "или запустите `python -m aicoach.cli ui --video <путь> --youtube-id <id>`."
+)
+
+# Names of the players on the plates (D-059).
+COLUMN_PLAYER = "Игрок"
+PLAYER_UNCHECKED_MARK = " (без сверки с составом)"
+PLAYER_UNRECOGNIZED = "не распознано"
+PLAYER_WENT_ON = "вышел"
+PLAYER_WENT_OFF = "ушёл"
+PLATE_NAMES_SKIPPED = (
+    "Фамилии с плашек не прочитаны: {reason}. Установите Tesseract с языками kaz и rus "
+    "и запустите обработку ещё раз; остальные стадии это не затрагивает."
 )
