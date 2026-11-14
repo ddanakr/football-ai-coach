@@ -39,3 +39,7 @@ class ExportError(AicoachError):
 
 class IngestError(AicoachError):
     """A match cannot be ingested: bad link, unavailable video, wrong frame size, no audio."""
+
+
+class ExternalServiceError(AicoachError):
+    """An outside service (the language-model API) failed after the retries, or refused."""

@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2",
-    "pydantic-settings",
+    "pydantic-settings>=2.16",
     "python-dotenv>=1.2",
     "structlog",
     "numpy",
@@ -18,6 +18,8 @@ dependencies = [
     "streamlit>=1.40,<2",
     "yt-dlp>=2026.10.26",
     "pytesseract>=0.3.13",
+    "google-genai>=3.3",
+    "httpx2>=2",  # its exceptions are caught in aicoach.agent.llm (a dependency of google-genai)
 ]
 
 [project.optional-dependencies]
@@ -32,6 +34,9 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"aicoach.agent" = ["system_prompt.md"]
 
 [tool.ruff]
 line-length = 100
@@ -80,6 +85,7 @@ markers = [
     "data_validation: data contracts, schemas, configs",
     "real_data: needs local match data, skipped by default",
     "slow: long-running tests",
+    "live_llm: calls the real Gemini API (key and network needed), skipped by default",
 ]
 
 [tool.coverage.run]

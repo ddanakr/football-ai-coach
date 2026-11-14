@@ -139,3 +139,16 @@ def test_ui_incomplete_match_arguments_exit_2(
 
     assert main(argv) == 2
     assert fake.commands == []
+
+
+@pytest.mark.unit
+def test_ui_data_root_defaults_to_the_setting(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fake = FakeRun()
+    monkeypatch.setattr("aicoach.cli.subprocess.run", fake)
+    monkeypatch.setenv("AICOACH_DATA_ROOT", str(tmp_path / "root"))
+
+    assert main(["ui"]) == 0
+    (command,) = fake.commands
+    assert command[5:] == ["--", "--data-root", str(tmp_path / "root")]

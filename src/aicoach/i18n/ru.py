@@ -117,8 +117,16 @@ CLIP_DOWNLOAD = "Скачать клип"
 CLIP_FILE_GONE = "Файл клипа больше не найден: {name}. Вырежьте его заново."
 
 MISSING_GEMINI_KEY = (
-    "Ключ GEMINI_API_KEY не найден в файле .env в корне репозитория: "
-    "скопируйте .env.example в .env и впишите ключ."
+    "Ключ GEMINI_API_KEY не задан ни в переменной окружения, ни в файле .env в корне "
+    "репозитория: скопируйте .env.example в .env и впишите ключ."
+)
+UNREADABLE_ENV_FILE = (
+    "Файл .env не читается (права доступа или не UTF-8); исправьте или удалите его, "
+    "шаблон лежит в .env.example."
+)
+NO_DATA_ROOT = (
+    "Не задан каталог данных: укажите --data-root или AICOACH_DATA_ROOT (переменная окружения "
+    "или .env, см. .env.example)."
 )
 
 # New match from a YouTube link (D15): the ingest command and the sidebar block.
@@ -192,3 +200,29 @@ PLATE_NAMES_SKIPPED = (
     "Фамилии с плашек не прочитаны: {reason}. Установите Tesseract с языками kaz и rus "
     "и запустите обработку ещё раз; остальные стадии это не затрагивает."
 )
+
+
+# The agent (FR-8): answers, refusal and the "Agent" tab.
+AGENT_REFUSAL = "Не смогла подтвердить ответ данными, поэтому не отвечаю. Переформулируйте вопрос."
+AGENT_VIDEO_TIME = "видео {time}"
+AGENT_TAB = "Агент"
+AGENT_HINT = (
+    "Вопросы о событиях матча: голы, удары, угловые, фолы, замены. Ответы строятся только по "
+    "каталогу событий; число найденных событий не точная статистика."
+)
+AGENT_INPUT = "Вопрос о матче"
+AGENT_OPEN = "▶ {label}"
+AGENT_NO_KEY = "Агент недоступен: {error}"
+AGENT_FAILED = "Не удалось получить ответ: {error}"
+AGENT_CLIP = "Клип: {name}"
+AGENT_THINKING = "Ищу в каталоге событий…"
+AGENT_CLEAR = "Очистить историю"
+AGENT_META = (
+    "Проверка: {outcome}; вызовов инструментов: {calls}; "
+    "токенов: {tokens_in} вход, {tokens_out} выход; {seconds:.1f} с"
+)
+AGENT_OUTCOME_LABELS: dict[str, str] = {
+    "first_try": "с первой попытки",
+    "retry": "со второй попытки",
+    "refused": "отказ",
+}

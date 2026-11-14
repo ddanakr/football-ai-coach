@@ -8,12 +8,16 @@ import argparse
 import subprocess
 import sys
 from collections.abc import Sequence
+from functools import partial
 from pathlib import Path
 from typing import TypeVar
 
 from pydantic import ValidationError
 
+from aicoach.agent.evaluation import ANSWERS_FILE, format_summary, read_questions, run_questions
+from aicoach.agent.service import build_runtime, gemini_client
 from aicoach.clips import DEFAULT_AFTER_S, DEFAULT_BEFORE_S, export_event_clip
+from aicoach.config import load_settings
 from aicoach.errors import AicoachError, ConfigError
 from aicoach.fusion.config import load_fuse_config
 from aicoach.fusion.rules import count_events
@@ -21,9 +25,9 @@ from aicoach.fusion.schemas import CandidatesResult
 from aicoach.fusion.stage import DB_FILE, run_fuse
 from aicoach.i18n import ru
 from aicoach.ingest.download import VIDEO_FILE
-from aicoach.ingest.stage import EXIT_WAITING_TDEED, run_ingest
+from aicoach.ingest.stage import EXIT_WAITING_TDEED, IngestTools, run_ingest
 from aicoach.logging_setup import configure_logging
-from aicoach.pipeline import run_pipeline
+from aicoach.pipeline import Stages, run_pipeline
 from aicoach.plate_names.stage import STAGE as PLATE_NAMES_STAGE
 from aicoach.plate_names.stage import run_plate_names
 from aicoach.plates.config import PlatesConfig
@@ -93,7 +97,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ingest.add_argument("url", help="YouTube link of the match (watch, youtu.be or live form)")
     ingest.add_argument(
-        "--data-root", type=Path, required=True, help="directory with one directory per match"
+        "--data-root",
+        type=Path,
+        help="directory with one directory per match (default: AICOACH_DATA_ROOT)",
     )
     ingest.add_argument("--match-id", help="name of the match directory (default: the video id)")
     ingest.add_argument(
@@ -109,7 +115,10 @@ def build_parser() -> argparse.ArgumentParser:
     ui.add_argument("--video", type=Path, help="path of the match video to open")
     ui.add_argument("--youtube-id", help="YouTube id of the same match (11 chars)")
     ui.add_argument(
-        "--data-root", type=Path, help="directory for new matches (enables the 'new match' block)"
+        "--data-root",
+        type=Path,
+        help="directory for new matches, enables the 'new match' block (default: "
+        "AICOACH_DATA_ROOT)",
     )
     ui.add_argument(
         "--templates", type=Path, help="scoreboard_templates given to every ingest from the viewer"
@@ -133,6 +142,22 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=DEFAULT_AFTER_S,
         help=f"seconds after (default: {DEFAULT_AFTER_S:g})",
+    )
+
+    agent_eval = commands.add_parser(
+        "agent-eval", help="run a file of questions through the agent (FR-8), write answers.csv"
+    )
+    agent_eval.add_argument(
+        "--questions", type=Path, required=True, help="CSV: id,type,question,expected,what_we_check"
+    )
+    agent_eval.add_argument("--video", type=Path, required=True, help="path of the match video")
+    agent_eval.add_argument("--match-id", help="default: name of the video's directory")
+    agent_eval.add_argument(
+        "--db", type=Path, help="database file (default: aicoach.db by the video)"
+    )
+    agent_eval.add_argument("--model", help="Gemini model (default: GEMINI_MODEL, then config.py)")
+    agent_eval.add_argument(
+        "--output", type=Path, help=f"default: {ANSWERS_FILE} by the video (grade column empty)"
     )
 
     calib = commands.add_parser(
@@ -239,7 +264,13 @@ def _plates(args: argparse.Namespace) -> int:
 def _plate_names(args: argparse.Namespace) -> int:
     """Exit code 0 also when the step is skipped for want of Tesseract (the reason is shown)."""
     match_dir = args.video.parent
-    result = run_plate_names(match_dir, _match_id(args), lineup_path=args.lineups, force=args.force)
+    result = run_plate_names(
+        match_dir,
+        _match_id(args),
+        lineup_path=args.lineups,
+        force=args.force,
+        tesseract_cmd=load_settings().tesseract_cmd,
+    )
     if result is None:
         reason = read_status(match_dir).stages[PLATE_NAMES_STAGE].error
         sys.stdout.write(f"plate_names skipped: {reason}\n")
@@ -304,12 +335,20 @@ def _run(args: argparse.Namespace) -> int:
 
 def _ingest(args: argparse.Namespace) -> int:
     """Exit code 0 when the events are in the database, 3 while the T-DEED file is missing."""
+    settings = load_settings(data_root=args.data_root)
+    if settings.aicoach_data_root is None:
+        raise ConfigError(ru.NO_DATA_ROOT)
+    tools = None
+    if settings.tesseract_cmd is not None:
+        names = partial(run_plate_names, tesseract_cmd=settings.tesseract_cmd)
+        tools = IngestTools(stages=Stages(plate_names=names))
     result = run_ingest(
         args.url,
-        args.data_root,
+        settings.aicoach_data_root,
         match_id=args.match_id,
         templates=args.templates,
         hw_accel=not args.cpu,
+        tools=tools,
     )
     if result.fusion is None:
         waiting = ru.TDEED_WAITING.format(video=result.match_dir / VIDEO_FILE, dir=result.match_dir)
@@ -362,8 +401,12 @@ def _ui(args: argparse.Namespace) -> int:
     if (args.video is None) != (args.youtube_id is None):
         msg = "ui: --video and --youtube-id go together"
         raise ConfigError(msg)
-    if args.video is None and args.data_root is None:
-        msg = "ui: give --video and --youtube-id to open a match, or --data-root for new ones"
+    data_root = load_settings(data_root=args.data_root).aicoach_data_root
+    if args.video is None and data_root is None:
+        msg = (
+            "ui: give --video and --youtube-id to open a match, or --data-root "
+            "(or AICOACH_DATA_ROOT) for new ones"
+        )
         raise ConfigError(msg)
     match = None
     if args.video is not None:
@@ -375,13 +418,33 @@ def _ui(args: argparse.Namespace) -> int:
             video=args.video,
         )
     command = build_streamlit_command(
-        StartArgs(match=match, data_root=args.data_root, templates=args.templates)
+        StartArgs(match=match, data_root=data_root, templates=args.templates)
     )
     try:
         # Fixed program and our own arguments: nothing here comes from a shell string.
         return subprocess.run(command, check=False).returncode  # noqa: S603
     except KeyboardInterrupt:
         return 0
+
+
+def _agent_eval(args: argparse.Namespace) -> int:
+    """Ask every question, write answers.csv, print the validator summary."""
+    questions = read_questions(args.questions)
+    settings = load_settings(gemini_model=args.model)
+    match_dir = args.video.parent
+    runtime = build_runtime(
+        gemini_client(settings),
+        args.db or match_dir / DB_FILE,
+        _match_id(args),
+        match_dir,
+        args.video,
+    )
+    output = args.output or match_dir / ANSWERS_FILE
+    summary = run_questions(runtime.agent, questions, runtime.box_factory, output)
+    sys.stdout.write(
+        f"model: {settings.gemini_model}\nanswers: {output}\n{format_summary(summary)}"
+    )
+    return 0
 
 
 def _clip(args: argparse.Namespace) -> int:
@@ -421,6 +484,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _ui(args)
         if args.command == "clip":
             return _clip(args)
+        if args.command == "agent-eval":
+            return _agent_eval(args)
         return _calibrate(args)
     except AicoachError as err:
         sys.stderr.write(f"error: {err}\n")

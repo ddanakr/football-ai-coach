@@ -71,7 +71,7 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 │   ├── clips.py        # команда `clip`: экспорт клипа FFmpeg (D-056): окно `clip_window`, время из events_current, перекодирование H.264/AAC, `clips/` рядом с видео, готовый файл не режется заново
 │   ├── errors.py       # иерархия исключений
 │   ├── logging_setup.py  # structlog, JSON-строки в stderr
-│   ├── config.py       # read_gemini_api_key: ключ Gemini из `.env` в корне (D-057)
+│   ├── config.py       # `Settings` (pydantic-settings): GEMINI_API_KEY, GEMINI_MODEL, AICOACH_DATA_ROOT, TESSERACT_CMD; приоритет флаг CLI → переменная окружения → `.env` в корне → умолчание; `load_settings`, `read_gemini_api_key` (D-057, D-060)
 │   ├── youtube.py      # id видео YouTube (проверка: 11 знаков) и плоская ссылка просмотра; общий для ingest и ui
 │   ├── i18n/           # тексты интерфейса: ru.py (казахский: план)
 │   ├── domain/         # события и категории (events.py)
@@ -113,13 +113,23 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 │   │   ├── lock.py         # `ingest.lock` с pid: один ingest на каталог матча, замок умершего процесса снимается
 │   │   └── stage.py        # `run_ingest`: каталог матча, образцы табло, шаги со статусами в `status.json`, ожидание T-DEED, слияние
 │   ├── speech/         # план
-│   ├── agent/          # план: инструменты, проверка ссылок, промпты
+│   ├── agent/          # LLM-агент на Gemini (FR-8, D-061): инструменты над events_current, в ответе ссылки [E:id] вместо таймкодов, проверка ответа
+│   │   ├── context.py      # `MatchContext`: события, игровая минута по табло, имена с плашек, состав; `load_context`
+│   │   ├── tools.py        # `ToolBox`: match_info, query_events, get_event, find_player, make_clip; помнит выданные id, имена и числа
+│   │   ├── validator.py    # проверка ответа: ссылки, время, адреса, имена, числа цифрами
+│   │   ├── render.py       # ссылки [E:id] → метка (тип, тайм, минута, время видео) и ссылка YouTube
+│   │   ├── llm.py          # `LLMClient` (Protocol) и `GeminiClient` (google-genai, повторы на 429 и 5xx)
+│   │   ├── loop.py         # `Agent`: цикл вызовов (до 6 на вопрос), одна повторная попытка, отказ; системный промпт в `system_prompt.md`
+│   │   ├── evaluation.py   # команда `agent-eval`: вопросы CSV → `answers.csv`, сводка проверки
+│   │   └── service.py  names.py  messages.py  journal.py  pricing.py   # сборка агента для матча; сравнение имён; сообщения; журнал `agent_log.jsonl`; цены с источником
 │   └── ui/             # просмотр событий, ручные правки и экспорт клипа (Streamlit, D-054, D-055, D-056)
 │       ├── app.py          # тонкий скрипт Streamlit: плеер st.video, таблица событий с выбором строки, фильтры в боковой панели
 │       ├── logic.py        # чистые функции: фильтры, mm:ss, подписи, youtube_link, строки таблицы, выбор строки → событие
 │       ├── edits.py        # чистая логика ручных правок: разбор мм:сс, проверка времени по границам таймов и длине видео, сборка правки
 │       ├── launch.py       # аргументы скрипта после `--` и команда запуска streamlit; ID видео только аргумент процесса
 │       ├── ingest_jobs.py  # блок «Новый матч»: фоновый запуск `ingest` отдельным процессом с журналом, список шагов из status.json, сохранение загруженного lineups.csv
+│       ├── agent_panel.py  # панель «Агент»: история чата в session_state, поле вопроса, кнопки-ссылки переводят плеер на событие
+│       ├── agent_chat.py   # чистые помощники панели: текст ответа, ссылки без повторов, строка проверки
 │       └── data.py         # события, запись правок в журнал edits и границы таймов через слой хранилища
 ├── tests/              # структура в TESTING.md
 ├── data_labels/        # эталон разметки: JSON-файлы формата GroundTruth (D-040), в git
