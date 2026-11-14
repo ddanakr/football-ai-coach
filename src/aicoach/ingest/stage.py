@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TypeVar
 
 from aicoach.clips import Probe, Runner
-from aicoach.errors import IngestError, SpottingError
+from aicoach.errors import AicoachError, IngestError, SpottingError
 from aicoach.fusion.schemas import CandidatesResult
 from aicoach.ingest.download import VIDEO_FILE, Downloader, YtDlpDownloader
 from aicoach.ingest.lock import ingest_lock
@@ -157,7 +157,15 @@ def _download(video_id: str, match_dir: Path, tools: IngestTools, log: Logger) -
     else:
         progress = Progress(match_dir, "download", log)
         tools.downloader.download(canonical_url(video_id), match_dir, progress.update)
-    check_frame_size(tools.probe(video))
+    try:
+        info = tools.probe(video)
+    except AicoachError as err:
+        msg = (
+            f"cannot read {video} ({err}); if the file is broken or cut short, "
+            "delete it and run again"
+        )
+        raise IngestError(msg) from err
+    check_frame_size(info)
     return video
 
 
@@ -222,6 +230,8 @@ def _run(job: _Job) -> IngestResult:
             video, job.match_id, PlatesConfig(hw_accel=job.hw_accel), force=False
         ),
     )
+    # The lookup is a step of its own, so a failure (two files) is recorded; "waiting" below
+    # replaces its "done" entry.
     tdeed = job.step(
         TDEED_STEP, lambda: _own_stage(d, TDEED_STEP, log, lambda: _find_tdeed(d, log))
     )

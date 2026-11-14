@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from aicoach.errors import IngestError, PlatesError
+from aicoach.errors import IngestError, PlatesError, ScoreboardParseError
 from aicoach.ingest.download import VIDEO_FILE, ProgressCallback
 from aicoach.ingest.lock import LOCK_FILE
 from aicoach.ingest.media import AUDIO_FILE
@@ -184,6 +184,30 @@ def test_run_ingest_wrong_frame_size_stops_before_the_stages(tmp_path: Path, fak
 
 
 @pytest.mark.unit
+def test_run_ingest_unreadable_src_mp4_is_an_ingest_error_with_a_hint(
+    tmp_path: Path, fakes: Fakes
+) -> None:
+    match_dir = tmp_path / "data" / VID
+    match_dir.mkdir(parents=True)
+    (match_dir / VIDEO_FILE).write_bytes(b"truncated")
+
+    def broken_probe(_path: Path) -> VideoInfo:
+        msg = "cannot open video (broken file?)"
+        raise ScoreboardParseError(msg)
+
+    tools = fakes.tools()
+    tools = IngestTools(
+        downloader=tools.downloader, ffmpeg=tools.ffmpeg, probe=broken_probe, stages=tools.stages
+    )
+
+    with pytest.raises(IngestError, match=r"src\.mp4.*delete it"):
+        run_ingest(URL, tmp_path / "data", templates=make_templates(tmp_path), tools=tools)
+
+    assert states(match_dir)["download"] == "failed"
+    assert fakes.stages.calls == []
+
+
+@pytest.mark.unit
 def test_run_ingest_unavailable_video_fails_the_download_step(tmp_path: Path, fakes: Fakes) -> None:
     fakes.downloader.error = IngestError("YouTube download failed: Video unavailable")
 
@@ -279,7 +303,19 @@ def test_match_directory_empty_match_id_means_the_video_id(tmp_path: Path) -> No
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("name", ["..", ".", "a/b", "../up", "a\\b", "x" * 65, "-dash", "имя"])
+@pytest.mark.parametrize("name", ["com10", "nullable", "m_1.a", "a", "x" * 64, "match01_ingest"])
+def test_match_directory_accepts_plain_names_that_only_look_reserved(
+    tmp_path: Path, name: str
+) -> None:
+    assert match_directory(tmp_path, VID, name) == tmp_path / name
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "name",
+    ["..", ".", "a/b", "../up", "a\\b", "x" * 65, "-dash", "имя"]
+    + ["a.", "a..", "NUL", "nul", "COM1", "lpt9", "nul.txt", "con.x"],
+)
 def test_match_directory_refuses_unsafe_names(tmp_path: Path, name: str) -> None:
     with pytest.raises(IngestError, match="match id"):
         match_directory(tmp_path, VID, name)
