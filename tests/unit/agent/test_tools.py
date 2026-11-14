@@ -333,3 +333,35 @@ def test_find_player_without_lineup_says_that_the_number_was_not_used() -> None:
 
     assert [p["name"] for p in result["players"]] == ["Тестов Иван"]
     assert "номер не учтён" in result["note"]
+
+
+@pytest.mark.unit
+def test_toolbox_remembers_numbers_of_results_and_arguments_but_not_digits_of_ids() -> None:
+    tools = box()
+
+    tools.call("query_events", {"type": "goal", "half": 2})
+
+    assert {1.0, 2.0, 81.0} <= tools.seen_numbers  # total 1, the half, the minute
+    assert 6.0 not in tools.seen_numbers  # the digit of the id p:6
+
+
+@pytest.mark.unit
+def test_numbers_of_an_error_result_are_not_remembered() -> None:
+    tools = box()
+
+    tools.call("query_events", {"limit": 999})
+
+    assert tools.seen_numbers == set()
+
+
+@pytest.mark.unit
+def test_digits_of_an_event_id_or_a_limit_in_the_arguments_are_not_seen_numbers() -> None:
+    tools = box()
+
+    tools.call("get_event", {"event_id": "p:5"})
+    tools.call("query_events", {"type": "shot", "half": 1, "limit": 17})
+
+    assert 17.0 not in tools.seen_numbers
+    tools2 = box()
+    tools2.call("get_event", {"event_id": "p:99"})
+    assert 99.0 not in tools2.seen_numbers

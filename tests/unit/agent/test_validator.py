@@ -2,15 +2,22 @@
 
 import pytest
 
-from aicoach.agent.validator import Violation, describe, find_violations
+from aicoach.agent.validator import Violation, describe, find_violations, numbers_in
 
 SEEN = {"p:2", "p:6"}
 EXISTING = {"p:2", "p:6", "p:7"}
 NAMES = {"Тестов Иван", "Альфа", "Бета"}
+NUMBERS = {1.0, 2.0, 3.0, 4.0, 23.0, 45.0, 81.0}  # what the tools of the question returned
 
 
 def check(text: str) -> list[Violation]:
-    return find_violations(text, seen_ids=SEEN, existing_ids=EXISTING, allowed_names=NAMES)
+    return find_violations(
+        text,
+        seen_ids=SEEN,
+        existing_ids=EXISTING,
+        allowed_names=NAMES,
+        allowed_numbers=NUMBERS,
+    )
 
 
 def codes(text: str) -> list[str]:
@@ -48,7 +55,11 @@ def test_link_to_an_unknown_event_is_rejected() -> None:
 @pytest.mark.unit
 def test_link_to_an_event_that_disappeared_is_rejected() -> None:
     result = find_violations(
-        "Гол [E:p:2].", seen_ids=SEEN, existing_ids={"p:6"}, allowed_names=NAMES
+        "Гол [E:p:2].",
+        seen_ids=SEEN,
+        existing_ids={"p:6"},
+        allowed_names=NAMES,
+        allowed_numbers=NUMBERS,
     )
 
     assert [v.code for v in result] == ["id_not_in_events"]
@@ -75,6 +86,12 @@ def test_malformed_link_is_rejected(link: str) -> None:
 )
 def test_text_that_looks_like_a_video_time_is_rejected(text: str) -> None:
     assert "timecode" in codes(text)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("text", ["Гол на 12:34 видео.", "Гол на 1234 секунде."])
+def test_the_digits_of_a_time_are_not_reported_a_second_time_as_numbers(text: str) -> None:
+    assert codes(text) == ["timecode"]
 
 
 @pytest.mark.unit
@@ -126,6 +143,7 @@ def test_kazakh_letters_in_a_returned_name_are_matched_loosely() -> None:
         seen_ids=SEEN,
         existing_ids=EXISTING,
         allowed_names={"Нұрланов Ұлан"},
+        allowed_numbers=set(),
     )
 
     assert result == []
@@ -133,7 +151,7 @@ def test_kazakh_letters_in_a_returned_name_are_matched_loosely() -> None:
 
 @pytest.mark.unit
 def test_all_capitals_words_are_not_names() -> None:
-    assert check("Гол на 5-й минуте, но потом VAR отменил его.") == []
+    assert check("Гол на 4-й минуте, но потом VAR отменил его.") == []
 
 
 @pytest.mark.unit
@@ -179,3 +197,73 @@ def test_the_preposition_s_after_a_number_is_not_a_time() -> None:
 )
 def test_markdown_links_images_and_bare_domains_are_rejected(text: str) -> None:
     assert "url" in codes(text)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Система нашла 4 гола.",
+        "Гол на 23-й минуте [E:p:2].",
+        "Гол на 45+2 минуте [E:p:2].",  # 45 and 2 are both numbers of the results
+        "Во 2-м тайме, 81-я минута.",
+    ],
+)
+def test_numbers_from_the_tools_pass(text: str) -> None:
+    assert check(text) == []
+
+
+@pytest.mark.unit
+def test_an_invented_count_is_rejected() -> None:
+    result = check("Система нашла 7 голов.")
+
+    assert [(v.code, "7" in v.detail) for v in result] == [("unknown_number", True)]
+
+
+@pytest.mark.unit
+def test_an_invented_game_minute_is_rejected_also_in_added_time_form() -> None:
+    assert codes("Гол на 99-й минуте [E:p:2].") == ["unknown_number"]
+    assert codes("Гол на 45+7 минуте [E:p:2].") == ["unknown_number"]
+
+
+@pytest.mark.unit
+def test_each_invented_number_is_reported_once() -> None:
+    assert codes("Было 9 голов, потом снова 9 голов.") == ["unknown_number"]
+
+
+@pytest.mark.unit
+def test_digits_inside_links_are_not_numbers_of_the_text() -> None:
+    result = find_violations(
+        "Гол [E:p:99].",
+        seen_ids={"p:99"},
+        existing_ids={"p:99"},
+        allowed_names=NAMES,
+        allowed_numbers=NUMBERS,
+    )
+
+    assert result == []
+
+
+@pytest.mark.unit
+def test_comma_and_point_decimals_are_the_same_number() -> None:
+    result = find_violations(
+        "Уверенность 0,95 и 0.95.",
+        seen_ids=SEEN,
+        existing_ids=EXISTING,
+        allowed_names=NAMES,
+        allowed_numbers={0.95},
+    )
+
+    assert result == []
+
+
+@pytest.mark.unit
+def test_numbers_spelled_as_words_are_not_checked() -> None:
+    # A known limit (D-061): "семь голов" is not seen, only digits are.
+    assert check("Система нашла семь голов.") == []
+
+
+@pytest.mark.unit
+def test_numbers_in_reads_digits_and_added_time() -> None:
+    assert numbers_in("45+2', 0,5 и 38-й, p:12") == {45.0, 2.0, 0.5, 38.0, 12.0}
+    assert numbers_in("нет цифр") == set()

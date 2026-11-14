@@ -227,7 +227,7 @@ def test_run_questions_a_project_error_other_than_the_service_ends_only_that_que
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("answer", ["=1+1", "+1", "-1", "@cmd"])
+@pytest.mark.parametrize("answer", ["=итого", "+плюс", "-минус", "@cmd"])
 def test_answers_csv_does_not_hand_a_formula_to_the_spreadsheet(
     tmp_path: Path, answer: str
 ) -> None:

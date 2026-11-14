@@ -3,6 +3,8 @@
 An answer is accepted only if
 - every `[E:<id>]` link names an event the tools returned in this very conversation and which
   still exists in `events_current`;
+- every number written with digits (`38-й`, `45+2`, `3 гола`) is a number the tools returned
+  (or took as an argument) in this question, or one from the question text;
 - it contains nothing that looks like a video time (`1:02:03`, `12:34`, "на 1234 секунде"),
   a web address, or "minute of the video";
 - every capitalized word in the middle of a sentence (a surname, a team) is a name the tools
@@ -13,7 +15,7 @@ capitals. It errs on the strict side; a wrongly rejected answer is retried once.
 """
 
 import re
-from collections.abc import Collection
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 
 from aicoach.agent.names import same_word, words
@@ -40,6 +42,7 @@ _MIN_NAME_LETTERS = 3
 # Capitalized words that are not names of players or teams and appear in answers.
 ALLOWED_WORDS = frozenset({"кпл", "казахстан", "премьер", "лига", "var", "вар", "xg"})
 MAX_LISTED = 5
+_NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
 
 
 @dataclass(frozen=True)
@@ -113,12 +116,38 @@ def _name_violations(text: str, allowed_names: Collection[str]) -> list[Violatio
     return found
 
 
+def _without_times(text: str) -> str:
+    for pattern in _TIMECODES:
+        text = pattern.sub(" ", text)
+    return text
+
+
+def numbers_in(text: str) -> set[float]:
+    """The numbers written with digits in a text (`45+2` gives 45 and 2, `0,95` gives 0.95)."""
+    return {float(m.group(0).replace(",", ".")) for m in _NUMBER.finditer(text)}
+
+
+def _number_violations(text: str, allowed: Iterable[float]) -> list[Violation]:
+    allowed_set = set(allowed)
+    found: list[Violation] = []
+    reported: set[float] = set()
+    for match in _NUMBER.finditer(text):
+        shown = match.group(0)
+        value = float(shown.replace(",", "."))
+        if value in allowed_set or value in reported:
+            continue
+        reported.add(value)
+        found.append(Violation("unknown_number", f"число {shown} не приходило из инструментов"))
+    return found
+
+
 def find_violations(
     text: str,
     *,
     seen_ids: Collection[str],
     existing_ids: Collection[str],
     allowed_names: Collection[str],
+    allowed_numbers: Iterable[float],
 ) -> list[Violation]:
     """All reasons the answer cannot be shown; empty means it passes.
 
@@ -127,11 +156,15 @@ def find_violations(
         seen_ids: Event ids the tools returned in this conversation.
         existing_ids: Ids in `events_current` now.
         allowed_names: Names the tools returned plus the team names (full names, any case).
+        allowed_numbers: Numbers of the tool results and arguments of this question, and the
+            numbers of the question text. Numbers spelled as words are not checked.
     """
     plain = _strip_links(text)
     return [
         *_link_violations(text, seen_ids, existing_ids),
         *_time_violations(plain),
+        # A time already counts as a time violation: its digits are not reported a second time.
+        *_number_violations(_without_times(plain), allowed_numbers),
         *_name_violations(plain, allowed_names),
     ]
 
@@ -142,5 +175,5 @@ def describe(violations: list[Violation]) -> str:
     return (
         f"Ответ отклонён проверкой: {listed}. Перепиши ответ: ссылки [E:<id>] только на id из "
         "результатов инструментов этого разговора, без времени, секунд и адресов, фамилии "
-        "только из результатов инструментов. Если данных нет, так и скажи."
+        "и числа (цифрами) только из результатов инструментов. Если данных нет, так и скажи."
     )

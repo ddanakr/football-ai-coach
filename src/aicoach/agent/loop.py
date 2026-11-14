@@ -28,7 +28,7 @@ from aicoach.agent.messages import (
 from aicoach.agent.pricing import cost_usd
 from aicoach.agent.render import Segment, count_links, plain_text, render_answer
 from aicoach.agent.tools import ClipMade, ToolBox
-from aicoach.agent.validator import Violation, describe, find_violations
+from aicoach.agent.validator import Violation, describe, find_violations, numbers_in
 from aicoach.errors import ExternalServiceError, StorageError
 from aicoach.i18n import ru
 
@@ -227,6 +227,7 @@ class Agent:
             seen_ids=box.seen_event_ids,
             existing_ids=set(box.ctx.by_id()),
             allowed_names=[*box.allowed_names, question],
+            allowed_numbers=box.seen_numbers | numbers_in(question),
         )
 
     def _journal_quietly(self, question: str, run: _Run, duration_ms: int, outcome: str) -> None:

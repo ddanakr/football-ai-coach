@@ -7,6 +7,7 @@ Filtering by game minute, half, side and player happens here, in code, not in th
 answer against exactly what the tools returned (D-061).
 """
 
+import json
 from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -19,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from aicoach.agent.context import EventFacts, MatchContext
 from aicoach.agent.messages import ToolSpec
 from aicoach.agent.names import name_matches
+from aicoach.agent.validator import numbers_in
 from aicoach.clips import DEFAULT_AFTER_S, DEFAULT_BEFORE_S
 from aicoach.domain.events import EventType
 from aicoach.errors import ExportError
@@ -148,6 +150,20 @@ class ClipMade:
     path: Path
 
 
+# Arguments that name a fact the model asked about (a half, a minute, a shirt number). Others
+# (limit, clip window, event id) are not facts: they must not make a number "seen".
+_ASKED_NUMBERS = frozenset({"half", "minute_from", "minute_to", "number"})
+
+
+def _without_ids(value: Any) -> Any:  # noqa: ANN401 - walks the JSON of a result
+    """The result without `event_id` values: the digits of an id are not facts to state."""
+    if isinstance(value, dict):
+        return {k: _without_ids(v) for k, v in value.items() if k != "event_id"}
+    if isinstance(value, list):
+        return [_without_ids(v) for v in value]
+    return value
+
+
 def event_json(facts: EventFacts, team_names: Mapping[str, str]) -> Result:
     """One event as the model sees it. No video time: the interface adds it from the id."""
     event = facts.event
@@ -188,7 +204,8 @@ def _count_by(events: tuple[EventFacts, ...], key: Callable[[EventFacts], str]) 
 class ToolBox:
     """The tools over one match snapshot, for one question.
 
-    Keeps `seen_event_ids` and `seen_names` (what the answer may refer to) and `clips`.
+    Keeps `seen_event_ids`, `seen_names` and `seen_numbers` (what the answer may refer to or
+    state) and `clips`.
     `clip_maker` makes `make_clip` available; without it the tool is not offered.
     """
 
@@ -196,6 +213,7 @@ class ToolBox:
     clip_maker: ClipMaker | None = None
     seen_event_ids: set[str] = field(default_factory=set)
     seen_names: set[str] = field(default_factory=set)
+    seen_numbers: set[float] = field(default_factory=set)
     clips: list[ClipMade] = field(default_factory=list)
 
     def specs(self) -> tuple[ToolSpec, ...]:
@@ -222,13 +240,20 @@ class ToolBox:
         if handler is None:
             return {"error": f"неизвестный инструмент {name!r}"}
         try:
-            return handler(args)
+            result = handler(args)
         except ValidationError as err:
             # Field names and rules only: the model must fix its arguments.
             problems = "; ".join(
                 f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in err.errors()
             )
             return {"error": f"неверные аргументы: {problems}"}
+        if "error" not in result:
+            # What the answer may state: the numbers the tool returned, and those of the call
+            # (a half or a minute the model asked about; a count it made up is not among them).
+            self.seen_numbers |= numbers_in(json.dumps(_without_ids(result), ensure_ascii=False))
+            asked = {k: v for k, v in args.items() if k in _ASKED_NUMBERS}
+            self.seen_numbers |= numbers_in(json.dumps(asked))
+        return result
 
     def _emit(self, facts: EventFacts) -> Result:
         """The event for the model; remembers its id and names as handed out."""
