@@ -45,4 +45,5 @@ scoreboard_templates/
 # secrets
 .env
 .env.*
+*.env
 !.env.example

@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2",
     "pydantic-settings",
+    "python-dotenv>=1.2",
     "structlog",
     "numpy",
     "opencv-python-headless",

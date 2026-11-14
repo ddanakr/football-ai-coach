@@ -15,6 +15,13 @@ repos:
         args: [--maxkb=1024]
       - id: detect-private-key
 
+  # Version checked against the GitHub tags and PyPI on 2026-11-14 (D-057).
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: [--baseline, .secrets.baseline]
+
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v4.5.0
     hooks:

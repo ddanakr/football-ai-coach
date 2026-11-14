@@ -1,4 +1,4 @@
-"""Russian texts of the viewer (`aicoach.ui`)."""
+"""Russian texts of the viewer (`aicoach.ui`) and of user-facing configuration errors."""
 
 from aicoach.domain.events import EventType
 
@@ -115,3 +115,8 @@ CLIP_READY = "Клип: «{type}» в {time}, {before} с до и {after} с п�
 CLIP_FAILED = "Клип не сделан: {error}"
 CLIP_DOWNLOAD = "Скачать клип"
 CLIP_FILE_GONE = "Файл клипа больше не найден: {name}. Вырежьте его заново."
+
+MISSING_GEMINI_KEY = (
+    "Ключ GEMINI_API_KEY не найден в файле .env в корне репозитория: "
+    "скопируйте .env.example в .env и впишите ключ."
+)
