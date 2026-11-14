@@ -6,7 +6,8 @@ import pytest
 
 from aicoach.errors import AicoachError, FusionError, SpottingError
 from aicoach.fusion.config import FuseConfig
-from aicoach.pipeline import PipelineResult, run_pipeline
+from aicoach.logging_setup import stage_logger
+from aicoach.pipeline import PipelineResult, run_pipeline, run_step
 from aicoach.status import read_status
 from tests.fixtures.fusion_synth import write_tdeed
 from tests.fixtures.pipeline_fakes import Recorder
@@ -133,3 +134,21 @@ def test_run_pipeline_interrupt_does_not_leave_running_behind(tmp_path: Path) ->
         run_pipeline(tmp_path / "match.mp4", "m", stages=rec.stages())
 
     assert read_status(tmp_path).stages["run"].state == "failed"
+
+
+@pytest.mark.unit
+def test_run_step_reports_under_the_given_entry_and_names_the_stage(tmp_path: Path) -> None:
+    log = stage_logger("test", "m")
+
+    def boom() -> int:
+        msg = "bad input"
+        raise FusionError(msg)
+
+    assert run_step(tmp_path, "ingest", "audio", 0.25, lambda: 7, log) == 7
+    with pytest.raises(FusionError, match="stage fuse failed: bad input"):
+        run_step(tmp_path, "ingest", "fuse", 0.5, boom, log)
+
+    entry = read_status(tmp_path).stages["ingest"]
+    assert (entry.state, entry.progress) == ("failed", 0.5)
+    assert entry.error == "stage fuse failed: bad input"
+    assert "run" not in read_status(tmp_path).stages

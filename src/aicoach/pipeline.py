@@ -52,18 +52,27 @@ class PipelineResult:
     fusion: CandidatesResult
 
 
-def _step(match_dir: Path, index: int, call: Callable[[], _T], log: Logger) -> _T:
-    """Run one stage and report it in `status.json`; a failure names the stage and is raised
-    again: our own errors keep their type, any other exception becomes an `AicoachError`
-    (Ctrl+C and other interrupts pass through unchanged)."""
-    name = _STEPS[index]
-    set_status(match_dir, STAGE, "running", index / len(_STEPS), log)
+def run_step(
+    match_dir: Path,
+    entry: str,
+    name: str,
+    progress: float,
+    call: Callable[[], _T],
+    log: Logger,
+) -> _T:
+    """Run one stage under the `entry` record of `status.json` (`run`, `ingest`).
+
+    The entry is set to `running` with `progress` first. A failure names the stage and is
+    raised again: our own errors keep their type, any other exception becomes an
+    `AicoachError` (Ctrl+C and other interrupts pass through unchanged).
+    """
+    set_status(match_dir, entry, "running", progress, log)
     try:
         return call()
     except BaseException as err:  # any failure, even Ctrl+C, must not leave "running" behind
         reason = f"stage {name} failed: {str(err) or type(err).__name__}"
         log.exception("pipeline_failed", failed_stage=name, reason=reason)
-        set_status(match_dir, STAGE, "failed", index / len(_STEPS), log, error=reason)
+        set_status(match_dir, entry, "failed", progress, log, error=reason)
         if isinstance(err, AicoachError):
             err.args = (reason,)  # same object and type, the message names the stage
             raise
@@ -71,6 +80,11 @@ def _step(match_dir: Path, index: int, call: Callable[[], _T], log: Logger) -> _
             # A foreign error (OpenCV, OS) must reach the command line as a handled error too.
             raise AicoachError(reason) from err
         raise
+
+
+def _step(match_dir: Path, index: int, call: Callable[[], _T], log: Logger) -> _T:
+    """One stage of `run`, reported in the `run` entry of `status.json`."""
+    return run_step(match_dir, STAGE, _STEPS[index], index / len(_STEPS), call, log)
 
 
 def run_pipeline(
