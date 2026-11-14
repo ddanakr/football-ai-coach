@@ -17,6 +17,7 @@ dependencies = [
     "opencv-python-headless",
     "streamlit>=1.40,<2",
     "yt-dlp>=2026.10.26",
+    "pytesseract>=0.3.13",
 ]
 
 [project.optional-dependencies]
@@ -55,6 +56,11 @@ files = ["src", "tests"]
 [[tool.mypy.overrides]]
 # yt-dlp ships no type information; it is called in one module (aicoach.ingest.download).
 module = ["yt_dlp", "yt_dlp.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# pytesseract ships no type information; it is called in one module (aicoach.plate_names.reader).
+module = ["pytesseract"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

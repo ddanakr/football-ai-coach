@@ -6,6 +6,7 @@ from aicoach.errors import PlatesError
 from aicoach.fusion.config import FuseConfig
 from aicoach.fusion.schemas import CandidatesResult
 from aicoach.pipeline import Stages
+from aicoach.plate_names.schemas import PlateNamesResult
 from aicoach.plates.schemas import PlatesResult
 from aicoach.scoreboard.schemas import ScoreboardResult
 from tests.fixtures.fusion_synth import plates_result
@@ -34,6 +35,10 @@ class Recorder:
         self._record("plates", args, kwargs)
         return plates_result([])
 
+    def plate_names(self, *args: Any, **kwargs: Any) -> PlateNamesResult | None:
+        self._record("plate_names", args, kwargs)
+        return None  # as a skipped step: the ingest must not depend on the names
+
     def fusion(self, *args: Any, **kwargs: Any) -> CandidatesResult:
         self._record("fusion", args, kwargs)
         return CandidatesResult(
@@ -54,4 +59,9 @@ class Recorder:
         )
 
     def stages(self) -> Stages:
-        return Stages(scoreboard=self.scoreboard, plates=self.plates, fusion=self.fusion)
+        return Stages(
+            scoreboard=self.scoreboard,
+            plates=self.plates,
+            fusion=self.fusion,
+            plate_names=self.plate_names,
+        )

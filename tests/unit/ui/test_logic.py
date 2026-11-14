@@ -229,6 +229,7 @@ def test_table_records_have_russian_columns_in_order_and_empty_unknowns() -> Non
         "Уверенность",
         "Источник",
         "Команда",
+        "Игрок",
         "Правка",
     ]
     assert list(records[0].values()) == [
@@ -239,12 +240,14 @@ def test_table_records_have_russian_columns_in_order_and_empty_unknowns() -> Non
         "модель и плашка",
         "гости",
         "",
+        "",
     ]
     assert list(records[1].values()) == [
         "01:40",
         "Гол (добавлено вручную)",
         "",
         None,
+        "",
         "",
         "",
         "добавлено",

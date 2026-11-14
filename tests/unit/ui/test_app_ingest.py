@@ -206,3 +206,78 @@ def test_ingest_block_without_data_root_explains_how_to_enable_it(
     assert not app.exception
     assert any(ru.INGEST_NO_ROOT in c.value for c in app.sidebar.caption)
     assert not app.button  # no start button without a data root
+
+
+@pytest.mark.unit
+def test_ingest_start_saves_an_uploaded_lineup_in_the_match_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, popen: type[FakePopen]
+) -> None:
+    app = open_app(monkeypatch, tmp_path)
+    app.sidebar.file_uploader(key="ingest_lineup_0").upload(
+        "lineups.csv", "side,name\nhome,Лебедев Роман\n".encode()
+    )
+
+    app = submit(app)
+
+    assert not app.exception
+    assert len(popen.started) == 1
+    saved = tmp_path / VID / "lineups.csv"
+    assert saved.read_text(encoding="utf-8") == "side,name\nhome,Лебедев Роман\n"
+
+
+@pytest.mark.unit
+def test_ingest_start_without_a_lineup_writes_none(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, popen: type[FakePopen]
+) -> None:
+    submit(open_app(monkeypatch, tmp_path))
+
+    assert len(popen.started) == 1
+    assert not (tmp_path / VID / "lineups.csv").exists()
+
+
+@pytest.mark.unit
+def test_ingest_start_with_a_bad_lineup_is_refused_before_the_process_starts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, popen: type[FakePopen]
+) -> None:
+    app = open_app(monkeypatch, tmp_path)
+    app.sidebar.file_uploader(key="ingest_lineup_0").upload("lineups.csv", b"name\nx\n")
+
+    app = submit(app)
+
+    assert not app.exception
+    assert popen.started == []
+    assert not (tmp_path / VID / "lineups.csv").exists()
+    assert any(
+        str(e.value).startswith(ru.INGEST_LINEUP_BAD.format(error="")[:20])
+        for e in app.sidebar.error
+    )
+
+
+@pytest.mark.unit
+def test_ingest_start_clears_the_lineup_uploader_for_the_next_match(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, popen: type[FakePopen]
+) -> None:
+    app = open_app(monkeypatch, tmp_path)
+    app.sidebar.file_uploader(key="ingest_lineup_0").upload("lineups.csv", b"side,name\nhome,A B\n")
+
+    app = submit(app)
+
+    assert len(popen.started) == 1
+    assert [u.key for u in app.sidebar.file_uploader] == ["ingest_lineup_1"]
+    assert app.sidebar.file_uploader[0].value is None  # the next match starts without a file
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("popen")
+def test_ingest_step_list_shows_why_the_names_step_was_skipped(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    app = submit(open_app(monkeypatch, tmp_path))
+    write_status(tmp_path / VID, "plate_names", "skipped", 1.0, error="tesseract not found")
+
+    app = app.run()
+
+    text = sidebar_text(app) + "\n".join(str(c.value) for c in app.sidebar.caption)
+    skipped = ru.INGEST_STATE_LABELS["skipped"]
+    assert f"{ru.INGEST_STEP_LABELS['plate_names']}: {skipped}" in text
+    assert "tesseract not found" in text

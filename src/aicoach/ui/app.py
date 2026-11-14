@@ -16,7 +16,7 @@ import structlog
 
 from aicoach import clips
 from aicoach.domain.events import EventType
-from aicoach.errors import ConfigError, ExportError, IngestError, StorageError
+from aicoach.errors import ConfigError, ExportError, IngestError, PlatesError, StorageError
 from aicoach.i18n import ru
 from aicoach.ingest.download import VIDEO_FILE
 from aicoach.ingest.stage import STAGE as INGEST_STAGE
@@ -26,6 +26,7 @@ from aicoach.ui.data import (
     apply_edit,
     count_edits,
     load_events,
+    load_player_texts,
     load_time_bounds,
     undo_last,
 )
@@ -45,6 +46,7 @@ from aicoach.ui.ingest_jobs import (
     job_phase,
     launch,
     plan_job,
+    save_lineup,
     step_rows,
 )
 from aicoach.ui.launch import AppArgs, StartArgs, parse_start_args
@@ -80,6 +82,8 @@ _JOB = "ingest_job"  # the IngestJob the sidebar follows
 _PROC = "ingest_process"  # its process, while this session started it
 _INGEST_FLASH = "ingest_flash"  # (level, text) of the last start attempt
 _URL_KEY = "ingest_url"
+_LINEUP_KEY = "ingest_lineup"  # the uploaded lineups.csv, if any (a number is added to it)
+_LINEUP_ROUND = "ingest_lineup_round"  # a new uploader key after each start: it clears the file
 STATUS_REFRESH_S = 2  # how often the step list rereads status.json
 _HALF_OPTIONS: list[HalfFilter] = [None, 1, 2]
 _TYPES = list(EventType)
@@ -392,6 +396,12 @@ def _process_alive(job: IngestJob) -> bool:
     return busy_pid(job) is not None
 
 
+def _lineup_key() -> str:
+    """Key of the lineup uploader; it changes after every start, so the next match does not
+    silently get the file of the previous one."""
+    return f"{_LINEUP_KEY}_{st.session_state.get(_LINEUP_ROUND, 0)}"
+
+
 def _on_start_ingest(start: StartArgs) -> None:
     """Start `cli ingest` in the background for the typed link. Runs in a callback only."""
     st.session_state.pop(_INGEST_FLASH, None)
@@ -412,6 +422,13 @@ def _on_start_ingest(start: StartArgs) -> None:
         st.session_state[_JOB] = job
         st.session_state[_INGEST_FLASH] = ("error", ru.INGEST_BUSY.format(pid=pid))
         return
+    upload = st.session_state.get(_lineup_key())
+    if upload is not None:
+        try:
+            save_lineup(job.match_dir, upload.getvalue())
+        except (PlatesError, StorageError) as err:
+            st.session_state[_INGEST_FLASH] = ("error", ru.INGEST_LINEUP_BAD.format(error=err))
+            return
     try:
         started = launch(job)
     except OSError as err:
@@ -421,6 +438,7 @@ def _on_start_ingest(start: StartArgs) -> None:
     logger.info("ingest_started", stage="ui", match_id=job.video_id, pid=started.pid)
     st.session_state[_JOB] = job
     st.session_state[_PROC] = started
+    st.session_state[_LINEUP_ROUND] = st.session_state.get(_LINEUP_ROUND, 0) + 1
     st.session_state[_INGEST_FLASH] = ("ok", ru.INGEST_STARTED.format(log=job.log_path))
 
 
@@ -453,6 +471,8 @@ def _job_panel() -> None:
         if row.state == ru.INGEST_STATE_LABELS["running"] and row.progress > 0:
             line += f" ({row.progress:.0%})"
         st.text(line)
+        if row.error and row.state == ru.INGEST_STATE_LABELS["skipped"]:
+            st.caption(row.error)  # why the optional step did not run
     entry = status.stages.get(INGEST_STAGE)
     _show_phase(job, phase, None if entry is None else entry.error)
     st.caption(ru.INGEST_LOG.format(log=job.log_path))
@@ -466,6 +486,9 @@ def _render_ingest_panel(start: StartArgs) -> None:
             st.caption(ru.INGEST_NO_ROOT)
             return
         st.text_input(ru.INGEST_URL, key=_URL_KEY, help=ru.INGEST_URL_HELP)
+        st.file_uploader(
+            ru.INGEST_LINEUPS, type=["csv"], key=_lineup_key(), help=ru.INGEST_LINEUPS_HELP
+        )
         st.button(ru.INGEST_START, key="btn_ingest", on_click=_on_start_ingest, args=(start,))
         flash: tuple[str, str] | None = st.session_state.get(_INGEST_FLASH)
         if flash is not None:
@@ -516,7 +539,7 @@ def main() -> None:
     player_slot = st.container()  # filled below the table code: the pick is known only then
     st.caption(ru.SHOWN.format(shown=len(shown), total=len(events)))
     if shown:
-        rows = to_rows(shown)
+        rows = to_rows(shown, load_player_texts(args.results_dir))
         _take_pick(rows, _render_table(rows))
     else:
         st.info(ru.NOTHING_MATCHES)

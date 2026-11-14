@@ -12,17 +12,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, Any, Literal
 
+from aicoach.errors import StorageError
 from aicoach.fusion.stage import DB_FILE
 from aicoach.i18n import ru
 from aicoach.ingest.download import VIDEO_FILE
 from aicoach.ingest.lock import AliveCheck, pid_alive, running_pid
 from aicoach.ingest.stage import STAGE, STEPS, match_directory
 from aicoach.ingest.url import canonical_url, parse_youtube_url
+from aicoach.plate_names.lineup import LINEUP_FILE, parse_lineup
 from aicoach.status import StatusFile
 from aicoach.ui.launch import AppArgs
 
 LOG_FILE = "ingest.log"
-Phase = Literal["running", "waiting", "done", "failed", "gone"]
+Phase = Literal["running", "waiting", "done", "failed", "skipped", "gone"]
 
 
 # `subprocess.Popen` or a fake. Any: Popen's keyword arguments are many and mixed, and only
@@ -72,6 +74,35 @@ def plan_job(url: str, data_root: Path, templates: Path | None = None) -> Ingest
     """
     video_id = parse_youtube_url(url)
     return IngestJob(video_id, match_directory(data_root, video_id), templates)
+
+
+def save_lineup(match_dir: Path, data: bytes) -> Path:
+    """Check an uploaded `lineups.csv` and keep it in the match directory (UTF-8, no BOM).
+
+    The next ingest of the match reads the names on the plates against it. The file is checked
+    before it is written, so a bad upload never replaces a good lineup.
+
+    Raises:
+        PlatesError: The file is not a valid lineup (see `parse_lineup`).
+        StorageError: The directory or the file cannot be written.
+    """
+    parse_lineup(data)
+    path = match_dir / LINEUP_FILE
+    try:
+        match_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as err:
+        msg = f"cannot create {match_dir}: {err}"
+        raise StorageError(msg) from err
+    text = data.decode("utf-8-sig").replace("\r\n", "\n")  # written as bytes: no platform newlines
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_bytes(text.encode("utf-8"))
+        tmp.replace(path)
+    except OSError as err:
+        tmp.unlink(missing_ok=True)
+        msg = f"cannot write {path}"
+        raise StorageError(msg) from err
+    return path
 
 
 def build_ingest_command(job: IngestJob, python: str | None = None) -> list[str]:
