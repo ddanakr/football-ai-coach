@@ -14,6 +14,8 @@ from typing import TypeVar
 
 from pydantic import ValidationError
 
+from aicoach.agent.evaluation import ANSWERS_FILE, format_summary, read_questions, run_questions
+from aicoach.agent.service import build_runtime, gemini_client
 from aicoach.clips import DEFAULT_AFTER_S, DEFAULT_BEFORE_S, export_event_clip
 from aicoach.config import load_settings
 from aicoach.errors import AicoachError, ConfigError
@@ -140,6 +142,22 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=DEFAULT_AFTER_S,
         help=f"seconds after (default: {DEFAULT_AFTER_S:g})",
+    )
+
+    agent_eval = commands.add_parser(
+        "agent-eval", help="run a file of questions through the agent (FR-8), write answers.csv"
+    )
+    agent_eval.add_argument(
+        "--questions", type=Path, required=True, help="CSV: id,type,question,expected,what_we_check"
+    )
+    agent_eval.add_argument("--video", type=Path, required=True, help="path of the match video")
+    agent_eval.add_argument("--match-id", help="default: name of the video's directory")
+    agent_eval.add_argument(
+        "--db", type=Path, help="database file (default: aicoach.db by the video)"
+    )
+    agent_eval.add_argument("--model", help="Gemini model (default: GEMINI_MODEL, then config.py)")
+    agent_eval.add_argument(
+        "--output", type=Path, help=f"default: {ANSWERS_FILE} by the video (grade column empty)"
     )
 
     calib = commands.add_parser(
@@ -409,6 +427,26 @@ def _ui(args: argparse.Namespace) -> int:
         return 0
 
 
+def _agent_eval(args: argparse.Namespace) -> int:
+    """Ask every question, write answers.csv, print the validator summary."""
+    questions = read_questions(args.questions)
+    settings = load_settings(gemini_model=args.model)
+    match_dir = args.video.parent
+    runtime = build_runtime(
+        gemini_client(settings),
+        args.db or match_dir / DB_FILE,
+        _match_id(args),
+        match_dir,
+        args.video,
+    )
+    output = args.output or match_dir / ANSWERS_FILE
+    summary = run_questions(runtime.agent, questions, runtime.box_factory, output)
+    sys.stdout.write(
+        f"model: {settings.gemini_model}\nanswers: {output}\n{format_summary(summary)}"
+    )
+    return 0
+
+
 def _clip(args: argparse.Namespace) -> int:
     path = export_event_clip(
         args.db or args.video.parent / DB_FILE,
@@ -446,6 +484,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _ui(args)
         if args.command == "clip":
             return _clip(args)
+        if args.command == "agent-eval":
+            return _agent_eval(args)
         return _calibrate(args)
     except AicoachError as err:
         sys.stderr.write(f"error: {err}\n")

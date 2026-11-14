@@ -156,3 +156,30 @@ def find_player(
     if len(scored) > 1 and scored[1][0] == best_score and scored[1][1].name != best.name:
         return None, best_score
     return LineupMatch(best, best_score), best_score
+
+
+def parse_team_names(data: bytes) -> dict[Side, str]:
+    """The team name of each side from the `team` column; empty where it is missing.
+
+    Never raises: the names are decoration, a file that `parse_lineup` would reject simply has
+    none here (the caller reads the players with `parse_lineup`, which reports the problem).
+    """
+    try:
+        text = data.decode("utf-8-sig")
+        rows = list(
+            csv.reader(io.StringIO(text), delimiter=_delimiter(text), skipinitialspace=True)
+        )
+    except (UnicodeDecodeError, csv.Error):
+        return {}
+    if not rows:
+        return {}
+    column = {cell.strip().lower(): i for i, cell in enumerate(rows[0])}
+    if "team" not in column or "side" not in column:
+        return {}
+    names: dict[Side, str] = {}
+    for row in rows[1:]:
+        side = _cell(row, column, "side").lower()
+        team = " ".join(_cell(row, column, "team").split())
+        if team and side in _SIDES:
+            names.setdefault("home" if side == "home" else "away", team)
+    return names

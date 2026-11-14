@@ -201,3 +201,29 @@ PLATE_NAMES_SKIPPED = (
     "Фамилии с плашек не прочитаны: {reason}. Установите Tesseract с языками kaz и rus "
     "и запустите обработку ещё раз; остальные стадии это не затрагивает."
 )
+
+
+# The agent (FR-8): answers, refusal and the "Agent" tab.
+AGENT_REFUSAL = "Не смогла подтвердить ответ данными, поэтому не отвечаю. Переформулируйте вопрос."
+AGENT_VIDEO_TIME = "видео {time}"
+AGENT_TAB = "Агент"
+AGENT_HINT = (
+    "Вопросы о событиях матча: голы, удары, угловые, фолы, замены. Ответы строятся только по "
+    "каталогу событий; число найденных событий не точная статистика."
+)
+AGENT_INPUT = "Вопрос о матче"
+AGENT_OPEN = "▶ {label}"
+AGENT_NO_KEY = "Агент недоступен: {error}"
+AGENT_FAILED = "Не удалось получить ответ: {error}"
+AGENT_CLIP = "Клип: {name}"
+AGENT_THINKING = "Ищу в каталоге событий…"
+AGENT_CLEAR = "Очистить историю"
+AGENT_META = (
+    "Проверка: {outcome}; вызовов инструментов: {calls}; "
+    "токенов: {tokens_in} вход, {tokens_out} выход; {seconds:.1f} с"
+)
+AGENT_OUTCOME_LABELS: dict[str, str] = {
+    "first_try": "с первой попытки",
+    "retry": "со второй попытки",
+    "refused": "отказ",
+}
