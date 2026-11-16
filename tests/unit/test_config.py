@@ -293,3 +293,16 @@ def test_dotenv_expands_variables_in_the_env_file(
     monkeypatch.setenv("SOME_OTHER_NAME", "expanded")
     path = _env_file(tmp_path, "GEMINI_MODEL=${SOME_OTHER_NAME}\n")
     assert load_settings(env_file=path).gemini_model == "expanded"
+
+
+@pytest.mark.unit
+def test_transcribe_model_default_and_overrides(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    path = _env_file(tmp_path, "GEMINI_TRANSCRIBE_MODEL=from-file\n")
+    assert load_settings(env_file=path).gemini_transcribe_model == "from-file"
+    monkeypatch.setenv("GEMINI_TRANSCRIBE_MODEL", "from-env")
+    assert load_settings(env_file=path).gemini_transcribe_model == "from-env"
+    monkeypatch.setenv("GEMINI_TRANSCRIBE_MODEL", "  ")
+    blank = load_settings(env_file=tmp_path / "none").gemini_transcribe_model
+    assert blank == "gemini-3.5-transcribe"

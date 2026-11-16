@@ -1,7 +1,7 @@
 """Project settings in one place (D-057, D-060).
 
 Priority, highest first: CLI flag, environment variable, `.env` in the repository root, default
-(the usual order for Docker and CI). Only the four settings below live here. Thresholds, clip
+(the usual order for Docker and CI). Only the five settings below live here. Thresholds, clip
 windows, limits and prices stay in the code of their modules and are not read from `.env`.
 
 The process environment is never changed: `pydantic-settings` reads `.env` into the settings
@@ -20,6 +20,9 @@ from aicoach.i18n import ru
 # Flash-class model with a free tier and function calling, recommended for new projects in the
 # Gemini API docs (models page, checked 2026-11-14). A setting, so it can be changed in `.env`.
 DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
+# The speech-to-text model: Stable, with a free tier, word timestamps and speaker labels (models
+# and pricing pages of the Gemini API docs, checked 2026-11-16).
+DEFAULT_TRANSCRIBE_MODEL = "gemini-3.5-transcribe"
 
 # src/aicoach/config.py -> repository root.
 DEFAULT_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
@@ -43,6 +46,7 @@ class Settings(BaseSettings):
 
     gemini_api_key: SecretStr | None = None
     gemini_model: str = DEFAULT_GEMINI_MODEL
+    gemini_transcribe_model: str = DEFAULT_TRANSCRIBE_MODEL
     aicoach_data_root: Path | None = None
     tesseract_cmd: Path | None = None
 
@@ -56,6 +60,11 @@ class Settings(BaseSettings):
     @classmethod
     def _blank_model_is_default(cls, value: str) -> str:
         return value.strip() or DEFAULT_GEMINI_MODEL
+
+    @field_validator("gemini_transcribe_model", mode="after")
+    @classmethod
+    def _blank_transcribe_model_is_default(cls, value: str) -> str:
+        return value.strip() or DEFAULT_TRANSCRIBE_MODEL
 
     def require_gemini_api_key(self) -> SecretStr:
         """The Gemini key.
