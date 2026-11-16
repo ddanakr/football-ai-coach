@@ -102,6 +102,25 @@ def latest_run_id(conn: sqlite3.Connection, match_id: str) -> str | None:
     return None if row is None else str(row["run_id"])
 
 
+def get_latest_predictions(conn: sqlite3.Connection, match_id: str) -> list[NewPrediction]:
+    """Read the predictions of the latest run as they were written, ordered by time.
+
+    Reads `predictions` only, never `edits` or `events_current`: evaluation must not see the
+    user's corrections (D-055). An unknown match gives an empty list.
+
+    Raises:
+        StorageError: The database failed or a stored row is invalid.
+    """
+    with translate_errors("cannot read predictions"):
+        rows = conn.execute(
+            "SELECT type, t_v, half, score, status, source, team FROM predictions "
+            "WHERE match_id = ? AND run_id = (SELECT run_id FROM latest_runs WHERE match_id = ?) "
+            "ORDER BY t_v, id",
+            (match_id, match_id),
+        ).fetchall()
+    return [NewPrediction.model_validate(dict(row)) for row in rows]
+
+
 def _require_live_event(conn: sqlite3.Connection, match_id: str, target: str) -> None:
     """Check that `target` is an existing, not deleted event of the match."""
     row = conn.execute(
