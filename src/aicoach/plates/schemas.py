@@ -8,7 +8,7 @@ from aicoach.scoreboard.schemas import DecodeMode, Roi
 
 VideoTime = Annotated[float, Field(ge=0, allow_inf_nan=False)]
 PlateType = Literal["subst", "goal", "card"]
-CardColor = Literal["yellow", "other"]
+CardColor = Literal["yellow", "red"]
 Team = Literal["home", "away"]
 RejectReason = Literal["no_panel", "no_marker", "too_short"]
 

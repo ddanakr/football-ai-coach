@@ -55,8 +55,8 @@ class EventFacts:
     minute: int | None
     minute_text: str | None
     players: tuple[PlayerRead, ...] = ()
-    # A foul that a card plate made: "yellow", or "other" (a colour that is not yellow; the red
-    # card was never seen in the data, so "other" is not claimed to be red). None: no card plate.
+    # A foul that a card plate made: "yellow" or "red" (the red plate was never seen on real
+    # footage, only on synthetic frames). None: no card plate.
     card: str | None = None
 
 
@@ -155,9 +155,10 @@ def _read_cards(
             if (
                 candidate.type == EventType.FOUL
                 and plate is not None
+                and plate.card_color is not None
                 and math.isclose(plate.t_first_seen, evidence.t_v, abs_tol=1e-6)
             ):
-                found[(candidate.type, candidate.t_v)] = plate.card_color or "other"
+                found[(candidate.type, candidate.t_v)] = plate.card_color
                 break
     return found
 

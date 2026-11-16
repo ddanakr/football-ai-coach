@@ -205,17 +205,26 @@ PLATE_NAMES_SKIPPED = (
 # The agent (FR-8): answers, refusal and the "Agent" tab.
 AGENT_REFUSAL = "Не смогла подтвердить ответ данными, поэтому не отвечаю. Переформулируйте вопрос."
 AGENT_VIDEO_TIME = "видео {time}"
+# Icons of the links in the agent's answers; a foul with a card plate gets the card's icon.
+EVENT_ICONS: dict[EventType, str] = {
+    EventType.GOAL: "⚽",
+    EventType.SHOT: "🎯",
+    EventType.CORNER: "🚩",
+    EventType.FOUL: "⚠️",
+    EventType.SUBST: "🔄",
+}
+CARD_ICONS: dict[str, str] = {"yellow": "🟨", "red": "🟥"}
 AGENT_TAB = "Агент"
 AGENT_HINT = (
     "Вопросы о событиях матча: голы, удары, угловые, фолы, замены. Ответы строятся только по "
-    "каталогу событий; число найденных событий не точная статистика."
+    "событиям, которые нашла система; это не официальная статистика."
 )
 AGENT_INPUT = "Вопрос о матче"
 AGENT_OPEN = "▶ {label}"
 AGENT_NO_KEY = "Агент недоступен: {error}"
 AGENT_FAILED = "Не удалось получить ответ: {error}"
 AGENT_CLIP = "Клип: {name}"
-AGENT_THINKING = "Ищу в каталоге событий…"
+AGENT_THINKING = "Смотрю события матча…"
 AGENT_CLEAR = "Очистить историю"
 AGENT_META = (
     "Проверка: {outcome}; вызовов инструментов: {calls}; "

@@ -1,6 +1,7 @@
 """The agent loop on a scripted model: tools, retry after a complaint, limits, failures."""
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -44,7 +45,7 @@ def test_links_are_rendered_with_type_half_minute_video_time_and_a_youtube_url()
     answer = agent(llm).ask("?", ToolBox(make_context()), "abcDEF_-123")
 
     (ref,) = [s for s in answer.segments if isinstance(s, EventRef)]
-    assert ref.label == "Гол, 1-й тайм, 23', видео 25:00"
+    assert ref.label == "⚽ 23' · видео 25:00"
     assert ref.url == "https://www.youtube.com/watch?v=abcDEF_-123&t=1495s"
     assert "1500" not in answer.text
 
@@ -233,7 +234,17 @@ def test_system_prompt_has_the_teams_and_no_match_data() -> None:
     assert "Бета" in text
     assert "{home}" not in text
     assert "[E:<id>]" in text
-    assert "p:" not in text.replace("[E:p:12]", "")  # no real event ids
+    assert "p:" not in re.sub(r"\[E:p:\d+\]", "", text)  # only the format examples, no raw ids
+
+
+@pytest.mark.unit
+def test_system_prompt_sets_the_tone_supports_red_cards_and_avoids_the_word_catalog() -> None:
+    text = load_system_prompt(make_context())
+
+    assert text.lower().count("каталог") == 1  # only in the ban itself
+    assert "red — красная" in text
+    assert "остальные показать?" in text
+    assert text.count("Вопрос:") >= 2
 
 
 @pytest.mark.unit
