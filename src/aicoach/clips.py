@@ -160,6 +160,9 @@ def _subprocess_runner(
     )
 
 
+subprocess_runner = _subprocess_runner  # public name for other modules (speech)
+
+
 def stderr_tail(stderr: bytes | None) -> str:
     """The last lines of FFmpeg's error output, decoded leniently and shortened."""
     text = (stderr or b"").decode("utf-8", errors="replace").strip()

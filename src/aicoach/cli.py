@@ -29,6 +29,7 @@ from aicoach.ingest.download import VIDEO_FILE
 from aicoach.ingest.stage import EXIT_WAITING_TDEED, IngestTools, run_ingest
 from aicoach.logging_setup import configure_logging
 from aicoach.pipeline import Stages, run_pipeline
+from aicoach.plate_names.lineup import LINEUP_FILE
 from aicoach.plate_names.stage import STAGE as PLATE_NAMES_STAGE
 from aicoach.plate_names.stage import run_plate_names
 from aicoach.plates.config import PlatesConfig
@@ -40,6 +41,13 @@ from aicoach.scoreboard.stage import (
     run_labelling,
     run_scoreboard,
 )
+from aicoach.speech.check_file import CHECK_FILE, load_check_file
+from aicoach.speech.run import (
+    OUTPUT_DIR as SPEECH_OUTPUT_DIR,
+)
+from aicoach.speech.run import format_summary as format_speech_summary
+from aicoach.speech.run import format_transcript, lineup_terms, run_speech_test
+from aicoach.speech.transcriber import GeminiTranscriber
 from aicoach.spotting.convert import DEFAULT_FPS, DEFAULT_MERGE_RADIUS_S
 from aicoach.spotting.evaluation import DEFAULT_THRESHOLDS, DEVELOPMENT_HALF, format_evaluation
 from aicoach.spotting.run import DEFAULT_GROUND_TRUTH, run_spotting_eval
@@ -159,6 +167,22 @@ def build_parser() -> argparse.ArgumentParser:
     agent_eval.add_argument("--model", help="Gemini model (default: GEMINI_MODEL, then config.py)")
     agent_eval.add_argument(
         "--output", type=Path, help=f"default: {ANSWERS_FILE} by the video (grade column empty)"
+    )
+
+    speech = commands.add_parser(
+        "speech-test",
+        help="transcribe the fragments of speech_check.txt with Gemini and score them (D-066)",
+    )
+    speech.add_argument("--video", type=Path, required=True, help="path of the match video")
+    speech.add_argument("--check-file", type=Path, help=f"default: {CHECK_FILE} by the video")
+    speech.add_argument(
+        "--lineups", type=Path, help=f"default: {LINEUP_FILE} by the video, if it exists"
+    )
+    speech.add_argument(
+        "--model", help="transcription model (default: GEMINI_TRANSCRIBE_MODEL, then config.py)"
+    )
+    speech.add_argument(
+        "--output", type=Path, help=f"default: {SPEECH_OUTPUT_DIR}/ by the video (outside git)"
     )
 
     calib = commands.add_parser(
@@ -483,6 +507,21 @@ def _agent_eval(args: argparse.Namespace) -> int:
     return 0
 
 
+def _speech_test(args: argparse.Namespace) -> int:
+    """Transcribe the check-file fragments, print the summary and the full transcripts."""
+    match_dir = args.video.parent
+    fragments = load_check_file(args.check_file or match_dir / CHECK_FILE)
+    settings = load_settings()
+    model = args.model or settings.gemini_transcribe_model
+    transcriber = GeminiTranscriber(settings.require_gemini_api_key(), model)
+    terms = lineup_terms(args.lineups or match_dir / LINEUP_FILE, required=args.lineups is not None)
+    out_dir = args.output or match_dir / SPEECH_OUTPUT_DIR
+    runs = run_speech_test(args.video, fragments, out_dir, transcriber, vocabulary=terms)
+    sys.stdout.write(f"model: {model}\nfiles: {out_dir}\n{format_speech_summary(runs)}\n")
+    sys.stdout.write("\n".join(format_transcript(r) for r in runs))
+    return 0
+
+
 def _clip(args: argparse.Namespace) -> int:
     path = export_event_clip(
         args.db or args.video.parent / DB_FILE,
@@ -524,6 +563,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _clip(args)
         if args.command == "agent-eval":
             return _agent_eval(args)
+        if args.command == "speech-test":
+            return _speech_test(args)
         return _calibrate(args)
     except AicoachError as err:
         sys.stderr.write(f"error: {err}\n")

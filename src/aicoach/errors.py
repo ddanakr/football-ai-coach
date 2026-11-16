@@ -43,3 +43,7 @@ class IngestError(AicoachError):
 
 class ExternalServiceError(AicoachError):
     """An outside service (the language-model API) failed after the retries, or refused."""
+
+
+class TranscriptionError(AicoachError):
+    """Speech transcription input or output is unusable: a bad fragment file or a bad answer."""
