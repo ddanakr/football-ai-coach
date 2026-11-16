@@ -25,7 +25,8 @@ from aicoach.scoreboard.config import ScoreboardConfig
 from aicoach.scoreboard.schemas import ScoreboardResult
 from aicoach.scoreboard.stage import run_scoreboard
 from aicoach.spotting.schemas import load_tdeed_file
-from aicoach.stage_common import Logger, elapsed_ms, set_status
+from aicoach.stage_common import Logger, elapsed_ms, finish_timing, set_status
+from aicoach.status import utc_now_iso
 
 STAGE = "run"
 _STEPS = ("scoreboard", "plates", "fuse")
@@ -63,20 +64,28 @@ def run_step(
     progress: float,
     call: Callable[[], _T],
     log: Logger,
+    *,
+    timed: bool = True,
 ) -> _T:
     """Run one stage under the `entry` record of `status.json` (`run`, `ingest`).
 
-    The entry is set to `running` with `progress` first. A failure names the stage and is
-    raised again: our own errors keep their type, any other exception becomes an
-    `AicoachError` (Ctrl+C and other interrupts pass through unchanged).
+    The entry is set to `running` with `progress` first. After the call, success or failure,
+    the start, the end (UTC) and the duration of the step are added to the `name` entry of
+    `status.json` (a step that wrote no entry, or only `skipped` or `waiting`, gets none).
+    `timed=False` leaves the step without times (a lookup is not work worth timing).
+    A failure names the stage and is raised again: our own errors keep their type, any other
+    exception becomes an `AicoachError` (Ctrl+C and other interrupts pass through unchanged).
     """
     set_status(match_dir, entry, "running", progress, log)
+    started_at, started = utc_now_iso(), time.perf_counter()
     try:
-        return call()
+        result = call()
     except BaseException as err:  # any failure, even Ctrl+C, must not leave "running" behind
         reason = f"stage {name} failed: {str(err) or type(err).__name__}"
         log.exception("pipeline_failed", failed_stage=name, reason=reason)
         set_status(match_dir, entry, "failed", progress, log, error=reason)
+        if timed:
+            finish_timing(match_dir, name, started_at, started, log)
         if isinstance(err, AicoachError):
             err.args = (reason,)  # same object and type, the message names the stage
             raise
@@ -84,6 +93,9 @@ def run_step(
             # A foreign error (OpenCV, OS) must reach the command line as a handled error too.
             raise AicoachError(reason) from err
         raise
+    if timed:
+        finish_timing(match_dir, name, started_at, started, log)
+    return result
 
 
 def _step(match_dir: Path, index: int, call: Callable[[], _T], log: Logger) -> _T:

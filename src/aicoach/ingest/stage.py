@@ -135,10 +135,18 @@ def ensure_templates(match_dir: Path, source: Path | None) -> None:
         raise IngestError(msg) from err
 
 
-def _own_stage(match_dir: Path, name: str, log: Logger, call: Callable[[], _T]) -> _T:
-    """Run a step that has no stage module of its own and keep its `status.json` entry."""
+def _own_stage(
+    match_dir: Path, name: str, log: Logger, call: Callable[[], _T], *, reuse: bool = False
+) -> _T:
+    """Run a step that has no stage module of its own and keep its `status.json` entry.
+
+    `reuse` says the step will find its result ready: `running` is then not written, so a
+    `done` entry keeps the times of the work that made the result, and any other entry gets
+    `done` without times (the check is not the work).
+    """
     started = time.perf_counter()
-    set_status(match_dir, name, "running", 0.0, log)
+    if not reuse:
+        set_status(match_dir, name, "running", 0.0, log)
     try:
         result = call()
     except BaseException as err:
@@ -205,10 +213,12 @@ class _Job:
     tools: IngestTools
     log: Logger
 
-    def step(self, name: str, call: Callable[[], _T]) -> _T:
+    def step(self, name: str, call: Callable[[], _T], *, timed: bool = True) -> _T:
         """One step under the `ingest` entry; its progress is the share of finished steps."""
         index = STEPS.index(name) if name in STEPS else 0  # "templates" comes before all steps
-        return run_step(self.match_dir, STAGE, name, index / len(STEPS), call, self.log)
+        return run_step(
+            self.match_dir, STAGE, name, index / len(STEPS), call, self.log, timed=timed
+        )
 
 
 def _run(job: _Job) -> IngestResult:
@@ -216,9 +226,20 @@ def _run(job: _Job) -> IngestResult:
     job.step("templates", lambda: ensure_templates(d, job.templates))
     video = job.step(
         "download",
-        lambda: _own_stage(d, "download", log, lambda: _download(job.video_id, d, tools, log)),
+        lambda: _own_stage(
+            d,
+            "download",
+            log,
+            lambda: _download(job.video_id, d, tools, log),
+            reuse=(d / VIDEO_FILE).is_file(),
+        ),
     )
-    job.step("audio", lambda: _own_stage(d, "audio", log, lambda: _audio(video, d, tools, log)))
+    job.step(
+        "audio",
+        lambda: _own_stage(
+            d, "audio", log, lambda: _audio(video, d, tools, log), reuse=(d / AUDIO_FILE).is_file()
+        ),
+    )
     job.step(
         "scoreboard",
         lambda: tools.stages.scoreboard(
@@ -237,7 +258,9 @@ def _run(job: _Job) -> IngestResult:
     # The lookup is a step of its own, so a failure (two files) is recorded; "waiting" below
     # replaces its "done" entry.
     tdeed = job.step(
-        TDEED_STEP, lambda: _own_stage(d, TDEED_STEP, log, lambda: _find_tdeed(d, log))
+        TDEED_STEP,
+        lambda: _own_stage(d, TDEED_STEP, log, lambda: _find_tdeed(d, log)),
+        timed=False,
     )
     if tdeed is None:
         progress = STEPS.index(TDEED_STEP) / len(STEPS)
@@ -245,7 +268,11 @@ def _run(job: _Job) -> IngestResult:
         set_status(d, STAGE, "waiting", progress, log)
         log.warning("waiting_for_tdeed", pattern=TDEED_PATTERN)
         return IngestResult(job.video_id, job.match_id, d, None)
-    job.step(TDEED_STEP, lambda: _own_stage(d, TDEED_STEP, log, lambda: _check_tdeed(tdeed)))
+    job.step(
+        TDEED_STEP,
+        lambda: _own_stage(d, TDEED_STEP, log, lambda: _check_tdeed(tdeed)),
+        timed=False,
+    )
     fusion = job.step(
         "fuse",
         lambda: tools.stages.fusion(d, job.match_id, tdeed, None, force=False, discard_edits=False),

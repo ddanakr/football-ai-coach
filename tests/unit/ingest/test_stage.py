@@ -428,3 +428,42 @@ def test_ensure_templates_copy_failure_leaves_no_partial_copy(
     with pytest.raises(IngestError, match="cannot copy the templates"):
         ensure_templates(match_dir, source)
     assert list(match_dir.iterdir()) == []
+
+
+@pytest.mark.unit
+def test_resumed_ingest_keeps_the_times_of_the_download_and_audio_that_were_done(
+    tmp_path: Path, fakes: Fakes
+) -> None:
+    first = ingest(tmp_path, fakes)
+    before = read_status(first.match_dir).stages
+    assert before["download"].duration_s is not None
+    assert before["audio"].duration_s is not None
+    assert before["tdeed"].duration_s is None  # waiting: no duration
+
+    write_tdeed(first.match_dir / "tdeed_SoccerNet_small.json", [])
+    second = ingest(tmp_path, Fakes(), templates=False)
+
+    after = read_status(second.match_dir).stages
+    for name in ("download", "audio"):
+        assert after[name] == before[name]
+    assert after["tdeed"].duration_s is None  # a file lookup is not timed
+
+
+@pytest.mark.unit
+def test_ingest_over_files_that_are_already_there_gives_no_download_or_audio_times(
+    tmp_path: Path, fakes: Fakes
+) -> None:
+    from aicoach.ingest.media import AUDIO_FILE
+
+    match_dir = tmp_path / "data" / VID
+    match_dir.mkdir(parents=True)
+    (match_dir / VIDEO_FILE).write_bytes(b"x")
+    (match_dir / AUDIO_FILE).write_bytes(b"x")
+
+    result = ingest(tmp_path, fakes)
+
+    stages = read_status(result.match_dir).stages
+    assert stages["download"].state == "done"
+    assert stages["download"].duration_s is None
+    assert stages["audio"].duration_s is None
+    assert stages["audio"].state == "done"

@@ -19,6 +19,7 @@ from aicoach.agent.service import build_runtime, gemini_client
 from aicoach.clips import DEFAULT_AFTER_S, DEFAULT_BEFORE_S, export_event_clip
 from aicoach.config import load_settings
 from aicoach.errors import AicoachError, ConfigError
+from aicoach.eval.final_run import DEFAULT_TDEED_THRESHOLD, FinalPaths, run_final_eval
 from aicoach.fusion.config import load_fuse_config
 from aicoach.fusion.rules import count_events
 from aicoach.fusion.schemas import CandidatesResult
@@ -196,6 +197,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="merge radius for duplicates, seconds (default: %(default)s)",
     )
     spot.add_argument("--output", type=Path, help="default: eval_<name>_half1.json next to input")
+
+    fin = commands.add_parser(
+        "final-eval",
+        help="metrics document docs/metrics.md: half 1; half 2 only with --final (once)",
+    )
+    fin.add_argument("--match-dir", type=Path, required=True, help="directory of the match files")
+    fin.add_argument(
+        "--ground-truth", type=Path, default=DEFAULT_GROUND_TRUTH, help="default: %(default)s"
+    )
+    fin.add_argument("--model-db", default="aicoach_model.db", help="in the match dir")
+    fin.add_argument("--nomodel-db", default="aicoach_nomodel.db", help="in the match dir")
+    fin.add_argument("--tdeed", required=True, help="T-DEED JSON file name in the match dir")
+    fin.add_argument("--gemini", default="gemini_baseline_half2.txt", help="in the match dir")
+    fin.add_argument("--ingest-dir", type=Path, help="directory with the status.json of ingest")
+    fin.add_argument("--tdeed-threshold", type=float, default=DEFAULT_TDEED_THRESHOLD)
+    fin.add_argument("--output", type=Path, default=Path("docs") / "metrics.md")
+    fin.add_argument(
+        "--final", action="store_true", help="also evaluate half 2 (reserved; run once)"
+    )
     return parser
 
 
@@ -396,6 +416,22 @@ def _spotting_eval(args: argparse.Namespace) -> int:
     return 0
 
 
+def _final_eval(args: argparse.Namespace) -> int:
+    match_dir: Path = args.match_dir
+    paths = FinalPaths(
+        match_dir=match_dir,
+        ground_truth=args.ground_truth,
+        model_db=match_dir / args.model_db,
+        nomodel_db=match_dir / args.nomodel_db,
+        tdeed=match_dir / args.tdeed,
+        gemini=match_dir / args.gemini,
+        ingest_dir=args.ingest_dir or match_dir,
+    )
+    run_final_eval(paths, args.output, final=args.final, tdeed_threshold=args.tdeed_threshold)
+    sys.stdout.write(f"result: {args.output}\n")
+    return 0
+
+
 def _ui(args: argparse.Namespace) -> int:
     """Run the Streamlit viewer; its exit code is ours. The video id stays in the arguments."""
     if (args.video is None) != (args.youtube_id is None):
@@ -474,6 +510,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _plate_names(args)
         if args.command == "spotting-eval":
             return _spotting_eval(args)
+        if args.command == "final-eval":
+            return _final_eval(args)
         if args.command == "fuse":
             return _fuse(args)
         if args.command == "run":

@@ -18,6 +18,7 @@ from aicoach.storage import (
     connect,
     count_effective_edits,
     get_current_events,
+    get_latest_predictions,
     init_db,
     latest_run_id,
     transaction,
@@ -1119,3 +1120,19 @@ def test_failed_commit_rolls_back_so_the_connection_stays_usable(db_path: Path) 
 
         assert not conn.in_transaction
         assert _table_rows(conn, "edits") == []
+
+
+def test_get_latest_predictions_reads_the_latest_run_without_edits(
+    conn: sqlite3.Connection,
+) -> None:
+    add_predictions(conn, "m", "run-1", [make_new_prediction("foul", 10.0)])
+    ids = add_predictions(
+        conn, "m", "run-2", [make_new_prediction("shot", 20.0), make_new_prediction("goal", 5.0)]
+    )
+    add_edit(conn, "m", "move", author="u", target=f"p:{ids[0]}", t_v=99.0)
+    add_edit(conn, "m", "delete", author="u", target=f"p:{ids[1]}")
+
+    rows = get_latest_predictions(conn, "m")
+
+    assert [(r.type, r.t_v) for r in rows] == [("goal", 5.0), ("shot", 20.0)]
+    assert get_latest_predictions(conn, "unknown") == []
