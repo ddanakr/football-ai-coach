@@ -8,9 +8,9 @@ from aicoach.plates.config import DetectParams
 from aicoach.plates.detect import (
     halves_count,
     light_share,
-    other_header_share,
     panel_signature,
     read_frame,
+    red_header_share,
     ring_blue_share,
     share,
     signature_distance,
@@ -37,14 +37,14 @@ PARAMS = DetectParams()
 @pytest.mark.unit
 @pytest.mark.parametrize(
     ("kind", "color"),
-    [("goal", None), ("card", "yellow"), ("subst", None), ("card_other", "other")],
+    [("goal", None), ("card", "yellow"), ("subst", None), ("card_red", "red")],
 )
 def test_read_frame_plate_gives_its_type_and_high_confidence(
     kind: PlateKind, color: str | None
 ) -> None:
     reading = read_frame(plate_frame(kind), LAYOUT, PARAMS)
 
-    assert reading.kind == ("card" if kind == "card_other" else kind)
+    assert reading.kind == ("card" if kind == "card_red" else kind)
     assert reading.card_color == color
     assert reading.reject is None
     assert reading.conf >= 0.8
@@ -181,7 +181,7 @@ def test_helpers_empty_crop_gives_zero(shape: tuple[int, int, int]) -> None:
 
     assert ring_blue_share(empty, 0.12) == 0.0
     assert light_share(empty, 180) == 0.0
-    assert other_header_share(empty) == 0.0
+    assert red_header_share(empty) == 0.0
     assert share(empty, lambda r, g, b: r > g + b) == 0.0
     assert halves_count(empty, lambda r, g, b: r > g + b) == (0, 0)
     assert not panel_signature(empty).any()
@@ -214,3 +214,14 @@ def test_signature_same_plate_is_near_and_another_text_is_far() -> None:
     assert other is not None
     assert signature_distance(first, again) < 0.02
     assert signature_distance(first, other) > 0.02
+
+
+@pytest.mark.unit
+def test_read_frame_header_of_a_non_red_non_yellow_colour_is_no_marker() -> None:
+    frame = plate_frame("card")
+    x0, y0, x1, y1 = box(frame, LAYOUT.header)
+    frame[y0:y1, x0:x1] = (200, 60, 0)  # a strongly saturated blue header: not a card
+
+    reading = read_frame(frame, LAYOUT, PARAMS)
+
+    assert (reading.kind, reading.reject) == (None, "no_marker")

@@ -5,6 +5,7 @@ from typing import Literal
 
 from aicoach.domain.events import EventType
 from aicoach.fusion.stage import DB_FILE, run_fuse
+from aicoach.plates.schemas import CardColor
 from aicoach.storage import CurrentEvent, NewPrediction, add_predictions, connect, init_db
 from tests.fixtures.fusion_synth import plate, write_inputs
 from tests.fixtures.plates_synth import change
@@ -52,7 +53,9 @@ def write_events_db(path: Path, match_id: str = "m1") -> None:
         add_predictions(conn, match_id, "run1", predictions)
 
 
-def write_match_dir(match_dir: Path, match_id: str = "m1") -> Path:
+def write_match_dir(
+    match_dir: Path, match_id: str = "m1", card_color: CardColor = "yellow"
+) -> Path:
     """A match directory as the fusion stage leaves it: inputs, `candidates.json` and the database.
 
     The synthetic video is 3000 s long with halves 100..1000 and 1500..2500 (the fusion stage
@@ -62,7 +65,11 @@ def write_match_dir(match_dir: Path, match_id: str = "m1") -> Path:
     write_inputs(
         match_dir,
         [change((0, 0), (1, 0), 199.0, 200.0)],
-        [plate("p1", "goal", 230.0), plate("p2", "subst", 600.0), plate("p3", "card", 700.0)],
+        [
+            plate("p1", "goal", 230.0),
+            plate("p2", "subst", 600.0),
+            plate("p3", "card", 700.0, card_color=card_color),
+        ],
         n_samples=3000,
     )
     run_fuse(match_dir, match_id, run_id="run1")

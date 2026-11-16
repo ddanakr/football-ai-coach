@@ -43,9 +43,9 @@ class DetectParams(_Frozen):
     # Shape of the triangles: the green one points up (more pixels in its lower half), the red
     # one points down (more in its upper half), by at least this factor. A circle gives ~1.
     arrow_balance: float = Field(default=1.5, gt=1)
-    # A header of another strong colour (not yellow) is a card of another colour.
-    min_header_other: float = Field(default=0.4, gt=0, le=1)
-    header_other_ref: float = Field(default=0.6, gt=0, le=1)
+    # Red card: a strongly saturated red header. Not checked on real plates (match01 has none).
+    min_header_red: float = Field(default=0.4, gt=0, le=1)
+    header_red_ref: float = Field(default=0.6, gt=0, le=1)
 
 
 class PlatesConfig(_Frozen):

@@ -21,9 +21,10 @@ from aicoach.scoreboard.board import crop_fraction
 from aicoach.scoreboard.video import Frame
 
 _SIGNATURE_SIZE = (54, 8)  # width, height of the downsized panel picture
-_OTHER_SATURATION = 150
-_OTHER_VALUE = 120
-_YELLOW_HUE = (18, 38)  # OpenCV hue units (0..179), excluded from "another colour"
+_RED_SATURATION = 150
+_RED_VALUE = 120
+_RED_HUE_MAX = 10  # OpenCV hue units (0..179): red wraps around, 0..10 and 170..179
+_RED_HUE_MIN = 170
 
 Mask = NDArray[np.bool_]
 MaskFn = Callable[[NDArray[np.int16], NDArray[np.int16], NDArray[np.int16]], Mask]
@@ -113,15 +114,15 @@ def light_share(panel: Frame, level: int) -> float:
     return float((panel.min(axis=2) > level).mean())
 
 
-def other_header_share(header: Frame) -> float:
-    """Share of strongly coloured pixels that are not yellow: a header of another colour."""
+def red_header_share(header: Frame) -> float:
+    """Share of strongly saturated red pixels in the header (a red card)."""
     if header.size == 0:
         return 0.0
     hsv = cv2.cvtColor(header, cv2.COLOR_BGR2HSV)
     hue, sat, val = hsv[..., 0], hsv[..., 1], hsv[..., 2]
-    strong = (sat > _OTHER_SATURATION) & (val > _OTHER_VALUE)
-    yellow = (hue >= _YELLOW_HUE[0]) & (hue <= _YELLOW_HUE[1])
-    return float((strong & ~yellow).mean())
+    strong = (sat > _RED_SATURATION) & (val > _RED_VALUE)
+    red = (hue <= _RED_HUE_MAX) | (hue >= _RED_HUE_MIN)
+    return float((strong & red).mean())
 
 
 def panel_signature(panel: Frame) -> NDArray[np.float32]:
@@ -166,7 +167,8 @@ def classify_header(
 ) -> tuple[PlateType | None, CardColor | None, float]:
     """The type from the header markers, the card colour and the marker's confidence (0..1).
 
-    Goal is checked first, then card, then substitution, then a header of another colour.
+    Goal is checked first, then a yellow card, then substitution, then a red card (its red header
+    is checked last: the substitution's red triangle is not in the header region).
     """
     tag = share(crop_fraction(frame, layout.tag), _orange)
     if tag >= params.min_tag:
@@ -179,9 +181,9 @@ def classify_header(
     arrows = _arrows_conf(frame, layout, params)
     if arrows is not None:
         return "subst", None, arrows
-    other = other_header_share(crop_fraction(frame, layout.header))
-    if other >= params.min_header_other:
-        return "card", "other", _scaled(other, params.header_other_ref)
+    red = red_header_share(crop_fraction(frame, layout.header))
+    if red >= params.min_header_red:
+        return "card", "red", _scaled(red, params.header_red_ref)
     return None, None, 0.0
 
 

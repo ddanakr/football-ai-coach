@@ -1,5 +1,6 @@
 """The agent tools over a synthetic match (no model, no files)."""
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -384,7 +385,7 @@ def test_query_events_card_filter_keeps_only_fouls_with_a_card() -> None:
 
 @pytest.mark.unit
 def test_match_info_counts_the_cards_by_colour() -> None:
-    assert box().call("match_info", {})["cards"] == {"yellow": 1, "other_color": 0}
+    assert box().call("match_info", {})["cards"] == {"yellow": 1, "red": 0}
 
 
 @pytest.mark.unit
@@ -439,3 +440,20 @@ def test_team_unknown_is_counted_over_all_fitting_events_not_only_the_shown_ones
 
     assert result["returned"] == 1
     assert result["team_unknown"] == 2  # p:4 and p:7
+
+
+def box_with_red_card() -> ToolBox:
+    ctx = make_context()
+    events = tuple(replace(f, card="red") if f.event.event_id == "p:4" else f for f in ctx.events)
+    return ToolBox(replace(ctx, events=events))
+
+
+@pytest.mark.unit
+def test_red_card_is_shown_counted_and_found_by_the_card_filter() -> None:
+    tools = box_with_red_card()
+
+    assert tools.call("get_event", {"event_id": "p:4"})["event"]["card"] == "red"
+    assert tools.call("match_info", {})["cards"] == {"yellow": 0, "red": 1}
+    assert ids(tools.call("query_events", {"card": True})) == ["p:4"]
+    (player,) = tools.call("find_player", {"query": "Образцов"})["players"]
+    assert (player["yellow_cards"], player["red_cards"]) == (0, 1)

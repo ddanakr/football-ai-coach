@@ -62,7 +62,7 @@ def test_question_is_answered_with_a_link_button_that_puts_the_player_on_the_eve
     ((question, answer),) = app.session_state[HISTORY_KEY]
     assert question == "Кто забил?"
     assert answer.outcome == "first_try"
-    assert any("Гол, 1-й тайм" in m.value for m in app.markdown)
+    assert any(m.value.startswith("Гол: **[⚽ ") for m in app.markdown)
     buttons = [b for b in app.button if b.key and b.key.startswith("agent_open_")]
     assert len(buttons) == 1
     assert not [t for t in app.markdown if t.value.startswith(f"**{ru.PLAYING[:6]}")]  # not yet

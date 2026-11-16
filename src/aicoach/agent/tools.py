@@ -196,7 +196,7 @@ def event_json(facts: EventFacts, team_names: Mapping[str, str]) -> Result:
     if len(named) < len(facts.players):
         result["unrecognized_names"] = len(facts.players) - len(named)
     if facts.card is not None:
-        result["card"] = facts.card  # "yellow", or "other" (not yellow, red is not confirmed)
+        result["card"] = facts.card  # "yellow" or "red"
     if event.type == EventType.SUBST:
         result["substitution"] = _substitution(facts.players)
     return result
@@ -299,7 +299,7 @@ class ToolBox:
             "events_by_half": _count_by(events, lambda f: str(f.event.half or "unknown")),
             "cards": {
                 "yellow": sum(f.card == "yellow" for f in events),
-                "other_color": sum(f.card == "other" for f in events),
+                "red": sum(f.card == "red" for f in events),
             },
             "note": ACCURACY_NOTE,
         }
@@ -367,7 +367,7 @@ class ToolBox:
         a = GetEventArgs.model_validate(args)
         facts = self.ctx.by_id().get(a.event_id)
         if facts is None:
-            return {"error": f"события {a.event_id!r} нет в каталоге"}
+            return {"error": f"события {a.event_id!r} нет в данных матча"}
         return {"event": self._emit(facts)}
 
     def _find_player(self, args: Mapping[str, Any]) -> Result:
@@ -418,6 +418,7 @@ class ToolBox:
                     "team_name": self.ctx.team_names[player.side],
                     "number": player.number,
                     "yellow_cards": sum(e.get("card") == "yellow" for e in events),
+                    "red_cards": sum(e.get("card") == "red" for e in events),
                     "events": events,
                 }
             )
@@ -439,6 +440,7 @@ class ToolBox:
                 "number": None,
                 "from_plates_only": True,
                 "yellow_cards": sum(f.card == "yellow" for f in dict.fromkeys(events)),
+                "red_cards": sum(f.card == "red" for f in dict.fromkeys(events)),
                 "events": [self._emit(f) for f in dict.fromkeys(events)],
             }
             for name, events in list(grouped.items())[:MAX_PLAYERS]
@@ -450,7 +452,7 @@ class ToolBox:
         if self.clip_maker is None:  # not offered, but a model may ask anyway
             return {"error": "клипы недоступны: видео матча не передано"}
         if a.event_id not in self.ctx.by_id():
-            return {"error": f"события {a.event_id!r} нет в каталоге"}
+            return {"error": f"события {a.event_id!r} нет в данных матча"}
         try:
             path = self.clip_maker(a.event_id, a.before_s, a.after_s)
         except ExportError as err:

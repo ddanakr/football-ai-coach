@@ -23,7 +23,7 @@ from aicoach.scoreboard.schemas import (
 )
 from aicoach.scoreboard.video import Frame
 
-PlateKind = Literal["subst", "goal", "card", "card_other", "coach", "round_dots"]
+PlateKind = Literal["subst", "goal", "card", "card_red", "coach", "round_dots"]
 WIDTH = 640
 HEIGHT = 360
 BLUE = (163, 76, 8)  # BGR, the block's blue
@@ -99,8 +99,8 @@ def draw_plate(
 ) -> Frame:
     """Draw a plate on `frame` (in place) and return it.
 
-    `coach` is a plate without any type marker, `card_other` has a strongly coloured header that
-    is not yellow, `round_dots` has round green and red dots where a substitution has triangles.
+    `coach` is a plate without any type marker, `card_red` has a red header, `round_dots`
+    has round green and red dots where a substitution has triangles.
     """
     layout = layout or PlateLayout()
     bx0, by0, bx1, by1 = box(frame, layout.block)
@@ -113,7 +113,7 @@ def draw_plate(
     _text_bars(frame, layout, text_seed)
     if kind == "goal":
         _fill(frame, layout.tag, ORANGE)
-    elif kind in ("card", "card_other"):
+    elif kind in ("card", "card_red"):
         _fill(frame, layout.header, YELLOW if kind == "card" else RED)
         if kind == "card":
             _fill(frame, layout.tab, YELLOW)

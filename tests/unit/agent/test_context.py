@@ -232,6 +232,13 @@ def test_load_context_marks_the_foul_made_by_a_card_plate(tmp_path: Path) -> Non
 
 
 @pytest.mark.unit
+def test_load_context_marks_a_red_card_plate_as_red(tmp_path: Path) -> None:
+    db = write_match_dir(tmp_path, "m1", card_color="red")
+
+    assert [f.card for f in load_context(db, "m1", tmp_path).events] == [None, None, "red"]
+
+
+@pytest.mark.unit
 def test_load_context_without_plates_file_has_no_cards(tmp_path: Path) -> None:
     db = write_match_dir(tmp_path, "m1")
     (tmp_path / "plates.json").unlink()

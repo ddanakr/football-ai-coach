@@ -3,6 +3,7 @@
 import csv
 import io
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -44,7 +45,7 @@ def test_render_splits_text_and_links_in_order() -> None:
 def test_render_label_leaves_out_the_unknown_minute_and_half() -> None:
     (ref,) = [s for s in render_answer("[E:p:7]", make_context(), None) if isinstance(s, EventRef)]
 
-    assert ref.label == "Удар, 2-й тайм, видео 116:40"
+    assert ref.label == "🎯 2-й тайм · видео 116:40"
     assert ref.url is None
 
 
@@ -52,7 +53,34 @@ def test_render_label_leaves_out_the_unknown_minute_and_half() -> None:
 def test_render_label_writes_added_time() -> None:
     (ref,) = [s for s in render_answer("[E:p:4]", make_context(), VID) if isinstance(s, EventRef)]
 
-    assert ref.label.startswith("Фол, 1-й тайм, 45+1'")
+    assert ref.label.startswith("🟨 45+1' · видео")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(("card", "icon"), [(None, "⚠️"), ("yellow", "🟨"), ("red", "🟥")])
+def test_render_label_icon_of_a_foul_follows_its_card(card: str | None, icon: str) -> None:
+    ctx = make_context()
+    events = tuple(replace(f, card=card) if f.event.event_id == "p:4" else f for f in ctx.events)
+
+    (ref,) = [
+        s
+        for s in render_answer("[E:p:4]", replace(ctx, events=events), VID)
+        if isinstance(s, EventRef)
+    ]
+
+    assert ref.label.startswith(icon + " ")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("event_id", "icon"), [("p:1", "🎯"), ("p:2", "⚽"), ("p:3", "🚩"), ("p:5", "🔄")]
+)
+def test_render_label_has_an_icon_per_type(event_id: str, icon: str) -> None:
+    (ref,) = [
+        s for s in render_answer(f"[E:{event_id}]", make_context(), VID) if isinstance(s, EventRef)
+    ]
+
+    assert ref.label.startswith(icon + " ")
 
 
 @pytest.mark.unit
@@ -69,9 +97,9 @@ def test_render_of_empty_text_is_empty() -> None:
 def test_plain_text_shows_label_and_url() -> None:
     text = plain_text(render_answer("Гол [E:p:2].", make_context(), VID))
 
-    assert text.startswith("Гол [Гол, 1-й тайм, 23', видео 25:00: https://www.youtube.com/")
+    assert text.startswith("Гол [⚽ 23' · видео 25:00: https://www.youtube.com/")
     assert plain_text(render_answer("Гол [E:p:2].", make_context(), None)) == (
-        "Гол [Гол, 1-й тайм, 23', видео 25:00]."
+        "Гол [⚽ 23' · видео 25:00]."
     )
 
 
@@ -174,7 +202,7 @@ def test_run_questions_writes_answers_with_an_empty_grade_and_counts_outcomes(
     assert [r["validator"] for r in rows] == ["first_try", "retry"]
     assert rows[0]["tool_calls"] == "query_events"
     assert rows[0]["expected"] == "2"
-    assert "Гол, 1-й тайм, 23'" in rows[0]["answer"]
+    assert "⚽ 23'" in rows[0]["answer"]
 
 
 @pytest.mark.unit

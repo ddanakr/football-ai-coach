@@ -5,7 +5,7 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 
-from aicoach.plates.schemas import Plate, PlatesResult, PlatesStats, PlateType, Team
+from aicoach.plates.schemas import CardColor, Plate, PlatesResult, PlatesStats, PlateType, Team
 from aicoach.scoreboard.schemas import Roi, ScoreChange
 from tests.fixtures.plates_synth import scoreboard_result
 
@@ -20,12 +20,13 @@ def plate(
     *,
     team: Team | None = "home",
     conf: float = 1.0,
+    card_color: CardColor = "yellow",
 ) -> Plate:
     """A plate first seen at `t`."""
     return Plate(
         id=plate_id,
         type=kind,
-        card_color="yellow" if kind == "card" else None,
+        card_color=card_color if kind == "card" else None,
         t_first_seen=t,
         t_last_seen=t + 4.0,
         team=team,

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from aicoach.agent.context import EventFacts, MatchContext
 from aicoach.agent.validator import LINK
 from aicoach.i18n import ru
-from aicoach.ui.logic import format_mmss, type_label, youtube_link
+from aicoach.ui.logic import format_mmss, youtube_link
 
 
 @dataclass(frozen=True)
@@ -26,15 +26,20 @@ Segment = str | EventRef
 
 
 def event_label(facts: EventFacts) -> str:
-    """`Гол, 1-й тайм, 23', видео 38:12`: parts that are unknown are left out."""
+    """`⚽ 23' · видео 38:12`: an icon, the game minute and the video time.
+
+    The icon is the card's for a foul with a card plate. Without a game minute the half stands
+    in its place (if known).
+    """
     event = facts.event
-    parts = [type_label(event.type)]
-    if event.half is not None:
-        parts.append(ru.HALF_TEXT.format(half=event.half))
+    icon = ru.CARD_ICONS.get(facts.card or "") or ru.EVENT_ICONS[event.type]
+    parts: list[str] = []
     if facts.minute_text is not None:
         parts.append(facts.minute_text)
+    elif event.half is not None:
+        parts.append(ru.HALF_TEXT.format(half=event.half))
     parts.append(ru.AGENT_VIDEO_TIME.format(time=format_mmss(event.t_v)))
-    return ", ".join(parts)
+    return f"{icon} {' · '.join(parts)}"
 
 
 def render_answer(text: str, ctx: MatchContext, youtube_id: str | None = None) -> list[Segment]:

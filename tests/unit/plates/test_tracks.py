@@ -149,7 +149,7 @@ def test_track_mid_hit_on_a_tie_takes_the_earlier_one() -> None:
 def test_card_color_of_takes_the_most_frequent_colour() -> None:
     hits = [
         hit(1.0, "card", color="yellow"),
-        hit(1.5, "card", color="other"),
+        hit(1.5, "card", color="red"),
         hit(2.0, "card", color="yellow"),
     ]
 

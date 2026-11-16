@@ -97,7 +97,7 @@ def answer(text: str = "Гол [E:p:2] и снова [E:p:2], удар [E:p:7]."
 def test_answer_markdown_shows_labels_in_bold_and_no_raw_ids() -> None:
     text = answer_markdown(answer())
 
-    assert "**[Гол, 1-й тайм, 23', видео 25:00]**" in text
+    assert "**[⚽ 23' · видео 25:00]**" in text
     assert "[E:" not in text
 
 
