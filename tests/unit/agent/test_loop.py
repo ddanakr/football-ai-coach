@@ -245,6 +245,7 @@ def test_system_prompt_sets_the_tone_supports_red_cards_and_avoids_the_word_cata
     assert "red — красная" in text
     assert "остальные показать?" in text
     assert text.count("Вопрос:") >= 2
+    assert "ни одного X не удалось точно приписать" in text
 
 
 @pytest.mark.unit
