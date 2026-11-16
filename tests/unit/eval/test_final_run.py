@@ -53,9 +53,17 @@ def paths(tmp_path: Path) -> FinalPaths:
     (match_dir / "gemini.txt").write_text("source\n" + json.dumps(baseline), encoding="utf-8")
     record = {"tokens_in": 10, "tokens_out": 2, "duration_ms": 1000, "validator": "first_try"}
     (match_dir / "agent_log.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
-    (match_dir / "status.json").write_text(
-        json.dumps({"stages": {"download": {"state": "done"}}}), encoding="utf-8"
-    )
+    stages = {
+        "download": {
+            "state": "done",
+            "progress": 1.0,
+            "started_at": "2026-11-16T10:00:00.000+00:00",
+            "finished_at": "2026-11-16T10:03:00.000+00:00",
+            "duration_s": 180.0,
+        },
+        "plate_names": {"state": "skipped", "progress": 1.0},
+    }
+    (match_dir / "status.json").write_text(json.dumps({"stages": stages}), encoding="utf-8")
     return FinalPaths(
         match_dir=match_dir,
         ground_truth=match_dir / "truth.json",
@@ -83,6 +91,9 @@ def test_run_without_final_leaves_half_two_and_the_baseline_unevaluated(
     assert "Событий в файле (разобрано) | 1" in text
     assert "внутри границ 2-го тайма" not in text
     assert "SECRETNAME" not in text
+    assert "| download | done | 2026-11-16T10:00:00.000+00:00 |" in text
+    assert "| 180.0 |" in text
+    assert "| plate_names | skipped | — | — | — |" in text
 
 
 def test_run_with_final_evaluates_half_two_and_checks_the_baseline_shift(

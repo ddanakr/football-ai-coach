@@ -21,6 +21,7 @@ from aicoach.eval.final import (
     truth_counts,
 )
 from aicoach.eval.metrics import EvaluationReport, evaluate
+from aicoach.status import StageStatus
 from tests.fixtures.factories import make_gt, make_pred
 
 
@@ -150,5 +151,36 @@ def test_summarize_agent_log_empty_is_all_undefined() -> None:
     assert "—" in cost_table(cost)
 
 
-def test_stage_table_has_no_time_data() -> None:
-    assert "нет данных" in stage_table({"download": "done"})
+def test_stage_table_shows_times_and_marks_missing_ones() -> None:
+    stages = {
+        "scoreboard": StageStatus(
+            state="done",
+            progress=1.0,
+            started_at="2026-11-16T10:00:00.000+00:00",
+            finished_at="2026-11-16T10:07:30.250+00:00",
+            duration_s=450.25,
+        ),
+        "plate_names": StageStatus(state="skipped", progress=1.0, error="no tesseract"),
+        "tdeed": StageStatus(state="waiting", progress=0.0),
+        "untimed": StageStatus(
+            state="done", progress=1.0, started_at="2026-11-16T10:00:00.000+00:00"
+        ),
+        "old": StageStatus(state="done", progress=1.0),
+        "quick": StageStatus(state="done", progress=1.0, duration_s=0.0),
+        "broken": StageStatus(state="failed", progress=0.3, error="boom"),
+    }
+
+    rows = {line.split(" | ")[0][2:]: line for line in stage_table(stages).splitlines()[2:]}
+
+    assert "| 450.2 |" in rows["scoreboard"] or "| 450.3 |" in rows["scoreboard"]
+    assert "2026-11-16T10:00:00.000+00:00" in rows["scoreboard"]
+    assert rows["plate_names"].endswith("| — | — | — |")
+    assert rows["tdeed"].endswith("| — | — | — |")
+    assert rows["old"].endswith("| нет данных |")
+    assert rows["untimed"].endswith("| — | — | нет данных |")  # a start alone is not shown
+    assert rows["quick"].endswith("| 0.0 |")
+    assert rows["broken"].endswith("| нет данных |")
+
+
+def test_stage_table_empty_has_only_the_header() -> None:
+    assert len(stage_table({}).splitlines()) == 2

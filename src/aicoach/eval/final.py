@@ -14,6 +14,7 @@ from aicoach.domain.events import EventType
 from aicoach.errors import EvalError
 from aicoach.eval.metrics import EvaluationReport, Metrics, ToleranceResult
 from aicoach.eval.schemas import GroundTruthEvent, Prediction
+from aicoach.status import StageStatus
 
 Half = Literal[1, 2]
 _EMPTY: Final = "—"
@@ -273,10 +274,28 @@ def edits_table(report: EvaluationReport) -> str:
     return "\n\n".join(blocks)
 
 
-def stage_table(states: Mapping[str, str]) -> str:
-    """Stage states from `status.json`; time is not stored there, so it is "нет данных"."""
-    lines = ["| Стадия | Состояние | Время |", "| --- | --- | --- |"]
-    lines += [f"| {name} | {state} | нет данных |" for name, state in states.items()]
+def _duration_cell(status: StageStatus) -> str:
+    """ "—" for a stage that did not run, "нет данных" when a run left no timing."""
+    if status.state in ("skipped", "waiting"):
+        return _EMPTY
+    return "нет данных" if status.duration_s is None else f"{status.duration_s:.1f}"
+
+
+def stage_table(stages: Mapping[str, StageStatus]) -> str:
+    """Stage states and times from `status.json` (UTC start and end, duration in seconds).
+
+    A skipped or waiting stage has no times; a finished one without them (a status file from
+    before the times were written) shows "нет данных".
+    """
+    lines = [
+        "| Стадия | Состояние | Начало (UTC) | Конец (UTC) | Длительность, с |",
+        "| --- | --- | --- | --- | ---: |",
+    ]
+    for name, status in stages.items():
+        timed = status.duration_s is not None
+        start = status.started_at if timed and status.started_at else _EMPTY
+        end = status.finished_at if timed and status.finished_at else _EMPTY
+        lines.append(f"| {name} | {status.state} | {start} | {end} | {_duration_cell(status)} |")
     return "\n".join(lines)
 
 

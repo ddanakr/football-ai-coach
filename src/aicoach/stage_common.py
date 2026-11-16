@@ -11,7 +11,7 @@ from pathlib import Path
 import structlog
 
 from aicoach.errors import StorageError
-from aicoach.status import State, write_status
+from aicoach.status import State, read_status, utc_now_iso, write_status, write_timing
 
 Logger = structlog.typing.FilteringBoundLogger
 _PROGRESS_STEP = 0.02  # write status.json after this much progress
@@ -47,6 +47,32 @@ def set_status(
         write_status(match_dir, stage, state, progress, error=error)
     except StorageError:
         log.warning("status_write_failed", state=state)
+
+
+def finish_timing(
+    match_dir: Path,
+    stage: str,
+    started_at: str,
+    started: float,
+    log: Logger,
+) -> None:
+    """Add the timing of a step that just ended to the `stage` entry of `status.json`.
+
+    Nothing is written unless the entry shows real work in this step: it has a start stamped
+    by the stage's `running` write after this step began, and no duration yet. A stage that
+    reused its result keeps the times of the work that made it, or has none; one that failed
+    before writing its own state keeps its old entry. Like `set_status`, a failure to write is
+    logged and never raised, so it cannot hide the error of the step.
+    """
+    try:
+        entry = read_status(match_dir).stages.get(stage)
+        if entry is None or entry.started_at is None or entry.duration_s is not None:
+            return
+        if entry.started_at < started_at:
+            return  # a start left by an earlier, killed run: this step did not stamp it
+        write_timing(match_dir, stage, started_at, utc_now_iso(), time.perf_counter() - started)
+    except (StorageError, ValueError):
+        log.warning("timing_write_failed", stage_name=stage)
 
 
 @dataclass
@@ -86,6 +112,7 @@ __all__ = [
     "Logger",
     "Progress",
     "elapsed_ms",
+    "finish_timing",
     "record_failure",
     "set_status",
     "write_atomic",

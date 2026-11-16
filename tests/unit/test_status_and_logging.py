@@ -10,7 +10,7 @@ from structlog.testing import capture_logs
 
 from aicoach.errors import ConfigError, StorageError
 from aicoach.logging_setup import configure_logging, stage_logger
-from aicoach.status import STATUS_FILE, read_status, write_status
+from aicoach.status import STATUS_FILE, read_status, write_status, write_timing
 
 
 @pytest.fixture(autouse=True)
@@ -86,6 +86,9 @@ def test_write_status_records_the_error_text_including_non_ascii(tmp_path: Path)
         "state": "failed",
         "progress": 0.4,
         "error": "нет образцов Қ",
+        "started_at": None,
+        "finished_at": None,
+        "duration_s": None,
     }
 
 
@@ -162,3 +165,85 @@ def test_configure_logging_can_be_called_twice_and_accepts_lower_case(
 def test_configure_logging_unknown_level_raises(level: str) -> None:
     with pytest.raises(ConfigError, match="unknown log level"):
         configure_logging(level)
+
+
+START, END = "2026-11-16T10:00:00.000+00:00", "2026-11-16T10:00:05.500+00:00"
+
+
+def test_write_timing_adds_the_times_and_keeps_the_state(tmp_path: Path) -> None:
+    write_status(tmp_path, "plates", "done", 1.0)
+
+    assert write_timing(tmp_path, "plates", START, END, 5.5)
+
+    entry = read_status(tmp_path).stages["plates"]
+    assert (entry.state, entry.started_at, entry.finished_at, entry.duration_s) == (
+        "done",
+        START,
+        END,
+        5.5,
+    )
+
+
+@pytest.mark.parametrize("state", ["skipped", "waiting"])
+def test_write_timing_skips_a_stage_that_did_not_run(tmp_path: Path, state: str) -> None:
+    write_status(tmp_path, "plate_names", state, 1.0)  # type: ignore[arg-type]  # parametrized
+
+    assert not write_timing(tmp_path, "plate_names", START, END, 1.0)
+    assert read_status(tmp_path).stages["plate_names"].duration_s is None
+
+
+def test_write_timing_without_an_entry_writes_nothing(tmp_path: Path) -> None:
+    assert not write_timing(tmp_path, "templates", START, END, 1.0)
+    assert not (tmp_path / STATUS_FILE).exists()
+
+
+@pytest.mark.parametrize("duration", [-1.0, float("nan")])
+def test_write_timing_rejects_a_bad_duration(tmp_path: Path, duration: float) -> None:
+    write_status(tmp_path, "plates", "done", 1.0)
+
+    with pytest.raises(ValueError, match="duration_s"):
+        write_timing(tmp_path, "plates", START, END, duration)
+
+
+def test_a_new_run_of_the_stage_clears_the_old_timing(tmp_path: Path) -> None:
+    write_status(tmp_path, "plates", "done", 1.0)
+    write_timing(tmp_path, "plates", START, END, 5.5)
+
+    write_status(tmp_path, "plates", "running", 0.0)
+
+    entry = read_status(tmp_path).stages["plates"]
+    assert entry.started_at is not None
+    assert entry.started_at != START  # the start of the new run
+    assert (entry.finished_at, entry.duration_s) == (None, None)
+
+
+def test_a_status_file_without_times_still_reads(tmp_path: Path) -> None:
+    (tmp_path / STATUS_FILE).write_text(
+        json.dumps({"stages": {"fuse": {"state": "done", "progress": 1.0, "error": None}}}),
+        encoding="utf-8",
+    )
+
+    assert read_status(tmp_path).stages["fuse"].duration_s is None
+
+
+def test_running_stamps_the_start_and_progress_updates_keep_it(tmp_path: Path) -> None:
+    write_status(tmp_path, "plates", "running", 0.0)
+    first = read_status(tmp_path).stages["plates"].started_at
+    write_status(tmp_path, "plates", "running", 0.5)
+
+    assert first is not None
+    assert read_status(tmp_path).stages["plates"].started_at == first
+
+
+def test_done_and_failed_after_running_keep_the_start_but_skipped_does_not(
+    tmp_path: Path,
+) -> None:
+    for state in ("done", "failed", "skipped"):
+        write_status(tmp_path, state, "running", 0.0)
+        write_status(tmp_path, state, state, 1.0)
+
+    stages = read_status(tmp_path).stages
+    assert stages["done"].started_at is not None
+    assert stages["failed"].started_at is not None
+    assert stages["skipped"].started_at is None
+    assert all(s.duration_s is None for s in stages.values())

@@ -4,7 +4,6 @@ Half 1 is always evaluated (the development half). Half 2 only with `final=True`
 the freeze. Predictions are read from `predictions`, never from `edits` (D-055).
 """
 
-import json
 import time
 from collections import Counter
 from collections.abc import Sequence
@@ -49,6 +48,7 @@ from aicoach.spotting.convert import (
 )
 from aicoach.spotting.schemas import load_tdeed_file
 from aicoach.stage_common import elapsed_ms, write_atomic
+from aicoach.status import StageStatus, StatusFile
 from aicoach.storage import connect, get_latest_predictions
 from aicoach.storage.models import NewPrediction
 
@@ -232,7 +232,7 @@ def render_document(
     gemini: str,
     shift: ShiftCheck | None,
     cost: AgentCost,
-    stages: dict[str, str],
+    stages: dict[str, StageStatus],
     threshold: float,
 ) -> str:
     """The whole `docs/metrics.md`: numbers and shares only."""
@@ -266,20 +266,19 @@ def render_document(
         + "\n\nПравка это удаление ложного события (FP) или добавление пропущенного (FN). "
         "Сумма включает 1-й тайм с оговоркой выше.\n",
         f"## Gemini-база: разбор файла\n\n{gemini}\n\nСдвиг времён: {_shift_text(shift)}.\n",
-        "## Стоимость и время обработки\n",
-        "Стадии обработки (`status.json` полной обработки):\n\n" + stage_table(stages) + "\n",
+        "## Время стадий и стоимость\n",
+        "Время стадий (`status.json` полной обработки; у пропущенных стадий нет длительности):"
+        "\n\n" + stage_table(stages) + "\n",
         "Агент (журнал `agent_log.jsonl`, все записи журнала):\n\n" + cost_table(cost) + "\n",
         "Время T-DEED в Colab, стоимость Gemini-базы: нет данных.\n",
     ]
     return "\n".join(parts)
 
 
-def _read_stage_states(path: Path) -> dict[str, str]:
+def _read_stage_states(path: Path) -> dict[str, StageStatus]:
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        stages = data["stages"]
-        return {str(name): str(entry["state"]) for name, entry in stages.items()}
-    except (OSError, ValueError, KeyError, TypeError, AttributeError) as err:
+        return StatusFile.model_validate_json(path.read_text(encoding="utf-8")).stages
+    except (OSError, ValueError) as err:
         msg = f"{path}: cannot read the stage states: {err}"
         raise EvalError(msg) from err
 
