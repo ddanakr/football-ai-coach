@@ -189,7 +189,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_provider_options(
         agent_eval,
-        "default: GEMINI_MODEL, then config.py (gemini); the Flash-lite slug of config.py "
+        "default: GEMINI_MODEL, then config.py (gemini); AICOACH_AGENT_MODEL, then config.py "
         "(openrouter)",
     )
     agent_eval.add_argument(

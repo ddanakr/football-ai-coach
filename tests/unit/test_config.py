@@ -11,7 +11,13 @@ from pydantic import SecretStr
 from structlog.testing import capture_logs
 
 from aicoach import config
-from aicoach.config import DEFAULT_GEMINI_MODEL, Settings, load_settings, read_gemini_api_key
+from aicoach.config import (
+    DEFAULT_AGENT_MODEL,
+    DEFAULT_GEMINI_MODEL,
+    Settings,
+    load_settings,
+    read_gemini_api_key,
+)
 from aicoach.errors import ConfigError
 from aicoach.logging_setup import configure_logging
 
@@ -46,6 +52,7 @@ def test_load_settings_without_anything_gives_the_defaults() -> None:
     settings = load_settings()
     assert settings.gemini_api_key is None
     assert settings.gemini_model == DEFAULT_GEMINI_MODEL
+    assert settings.aicoach_agent_model == DEFAULT_AGENT_MODEL == "openai/gpt-6-luna"
     assert settings.aicoach_data_root is None
     assert settings.tesseract_cmd is None
 
