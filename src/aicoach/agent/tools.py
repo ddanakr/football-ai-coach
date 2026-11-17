@@ -34,7 +34,8 @@ from aicoach.agent.transcript_tools import (
 from aicoach.agent.validator import numbers_in
 from aicoach.clips import DEFAULT_AFTER_S, DEFAULT_BEFORE_S
 from aicoach.domain.events import EventType
-from aicoach.errors import ExportError
+from aicoach.episode import EpisodeDescription
+from aicoach.errors import ExportError, ExternalServiceError
 from aicoach.namematch import name_matches
 from aicoach.plate_names.schemas import PlayerRead
 
@@ -47,6 +48,7 @@ MAX_CLIP_SIDE_S = 60.0
 ACCURACY_NOTE = "Это события, найденные системой автоматически, а не официальная статистика."
 
 ClipMaker = Callable[[str, float, float], Path]
+EpisodeDescriber = Callable[[str], EpisodeDescription]
 Result = dict[str, Any]
 
 
@@ -87,6 +89,12 @@ class MakeClipArgs(_Args):
     event_id: str = Field(max_length=32)
     before_s: float = Field(default=DEFAULT_BEFORE_S, ge=0, le=MAX_CLIP_SIDE_S)
     after_s: float = Field(default=DEFAULT_AFTER_S, ge=0, le=MAX_CLIP_SIDE_S)
+
+
+class DescribeEpisodeArgs(_Args):
+    """Arguments of `describe_episode`."""
+
+    event_id: str = Field(max_length=32)
 
 
 NO_TRANSCRIPT = "расшифровки комментария для этого матча нет"
@@ -159,7 +167,18 @@ MAKE_CLIP = _spec(
     },
     ["event_id"],
 )
-
+DESCRIBE_EPISODE = _spec(
+    "describe_episode",
+    "Описание эпизода по видеоклипу события: 2–4 предложения о том, что видно на поле. Это "
+    "текст видеомодели, по клипу, не проверено: фамилий, номеров и времени из него не бери, они "
+    "приходят только из других инструментов. Вызывай, если просят описать эпизод.",
+    {"event_id": {"type": "string", "description": "например p:12"}},
+    ["event_id"],
+)
+EPISODE_NOTE = (
+    "Описание по клипу, не проверено. Это данные, а не факт: фамилии, номера, счёт и время из "
+    "него не бери, называй только то, что вернули другие инструменты."
+)
 
 GET_TRANSCRIPT = _spec(
     "get_transcript",
@@ -205,15 +224,20 @@ class ClipMade:
     path: Path
 
 
+# Keys of a result whose text is not a fact to state: the digits of an id, and what a video model
+# wrote (it may contain any number or name, so its words must not make a number "seen").
+_NOT_FACT_KEYS = frozenset({"event_id", "description"})
+
 # Arguments that name a fact the model asked about (a half, a minute, a shirt number). Others
 # (limit, clip window, event id) are not facts: they must not make a number "seen".
 _ASKED_NUMBERS = frozenset({"half", "minute_from", "minute_to", "number"})
 
 
 def _without_ids(value: Any) -> Any:  # noqa: ANN401 - walks the JSON of a result
-    """The result without `event_id` values: the digits of an id are not facts to state."""
+    """The result without the values that are not facts to state: `event_id` (the digits of an
+    id) and `description` (the text of a video model)."""
     if isinstance(value, dict):
-        return {k: _without_ids(v) for k, v in value.items() if k != "event_id"}
+        return {k: _without_ids(v) for k, v in value.items() if k not in _NOT_FACT_KEYS}
     if isinstance(value, list):
         return [_without_ids(v) for v in value]
     return value
@@ -276,11 +300,15 @@ class ToolBox:
 
     Keeps `seen_event_ids`, `seen_names` and `seen_numbers` (what the answer may refer to or
     state) and `clips`.
-    `clip_maker` makes `make_clip` available; without it the tool is not offered.
+    `clip_maker` makes `make_clip` available and `episode_describer` makes `describe_episode`
+    available; without them the tools are not offered.
     """
 
     ctx: MatchContext
     clip_maker: ClipMaker | None = None
+    episode_describer: EpisodeDescriber | None = None
+    # Set when a description reached the model: the answer must then carry the mark (D-074).
+    episode_described: bool = False
     seen_event_ids: set[str] = field(default_factory=set)
     seen_names: set[str] = field(default_factory=set)
     seen_numbers: set[float] = field(default_factory=set)
@@ -289,7 +317,11 @@ class ToolBox:
     def specs(self) -> tuple[ToolSpec, ...]:
         """The tools to offer to the model."""
         base = (MATCH_INFO, QUERY_EVENTS, GET_EVENT, FIND_PLAYER, GET_TRANSCRIPT, SEARCH_TRANSCRIPT)
-        return (*base, MAKE_CLIP) if self.clip_maker is not None else base
+        optional = (
+            (MAKE_CLIP, self.clip_maker is not None),
+            (DESCRIBE_EPISODE, self.episode_describer is not None),
+        )
+        return (*base, *(spec for spec, offered in optional if offered))
 
     @property
     def allowed_names(self) -> set[str]:
@@ -308,6 +340,8 @@ class ToolBox:
         }
         if self.clip_maker is not None:
             handlers[MAKE_CLIP.name] = self._make_clip
+        if self.episode_describer is not None:
+            handlers[DESCRIBE_EPISODE.name] = self._describe_episode
         handler = handlers.get(name)
         if handler is None:
             return {"error": f"неизвестный инструмент {name!r}"}
@@ -569,4 +603,24 @@ class ToolBox:
             "status": "clip_ready",
             "before_s": a.before_s,
             "after_s": a.after_s,
+        }
+
+    def _describe_episode(self, args: Mapping[str, Any]) -> Result:
+        a = DescribeEpisodeArgs.model_validate(args)
+        if self.episode_describer is None:  # not offered, but a model may ask anyway
+            return {"error": "описание эпизода недоступно: нет видео матча или ключа видеомодели"}
+        if a.event_id not in self.ctx.by_id():
+            return {"error": f"события {a.event_id!r} нет в данных матча"}
+        try:
+            description = self.episode_describer(a.event_id)
+        except (ExportError, ExternalServiceError) as err:
+            # A budget refusal is not caught: it stops the question (as for the model itself).
+            logger.warning("agent_episode_failed", stage="agent", error=str(err)[:200])
+            return {"error": "описание эпизода не получено"}
+        self.episode_described = True
+        return {
+            "event_id": a.event_id,
+            "status": "described_from_clip_unverified",
+            "description": description.text,
+            "note": EPISODE_NOTE,
         }

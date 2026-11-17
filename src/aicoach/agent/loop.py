@@ -26,7 +26,13 @@ from aicoach.agent.messages import (
     UserMessage,
 )
 from aicoach.agent.pricing import cost_of
-from aicoach.agent.render import Segment, count_links, plain_text, render_answer
+from aicoach.agent.render import (
+    Segment,
+    count_links,
+    plain_text,
+    render_answer,
+    with_episode_mark,
+)
 from aicoach.agent.tools import ClipMade, ToolBox
 from aicoach.agent.validator import Violation, describe, find_violations, numbers_in
 from aicoach.errors import BudgetExceededError, ExternalServiceError, StorageError
@@ -147,6 +153,8 @@ class Agent:
             segments: list[Segment] = [ru.AGENT_REFUSAL]
         else:
             segments = render_answer(text, box.ctx, youtube_id)
+            if box.episode_described:
+                segments = with_episode_mark(segments)
         n_links = count_links(segments)
         duration_ms = self._duration_ms(started)
         self._journal(question, run, duration_ms, outcome, n_links)

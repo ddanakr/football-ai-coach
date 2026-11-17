@@ -46,12 +46,37 @@ OPENROUTER_PRICES_USD_PER_MTOK: dict[str, tuple[float, float]] = {
     "google/gemini-3.7-flash": (0.75, 3.75),
     "openai/gpt-6-luna": (0.10, 0.50),
     "anthropic/claude-haiku-5.5": (0.10, 0.50),
+    # Video models (FR-11, D-073), same source, read 2026-11-18.
+    "qwen/qwen3.8-omni-flash": (0.15, 0.47),
 }
 # The estimate of a request before it is sent. Our prompts are mostly Russian text: about two
 # characters per token is a deliberately high count (more tokens, a higher estimate). The answer
 # is assumed to be at most this long; both are assumptions, not measurements.
 CHARS_PER_TOKEN = 2
 ESTIMATED_OUTPUT_TOKENS = 1000
+
+
+# A video costs input tokens by its length. Gemini counts about 260 tokens per second of video at
+# its default sampling (Gemini API docs, video understanding); the figure is rounded up and used for
+# every model, which is an assumption for the others, not a measurement. The estimate only decides
+# whether the budget allows the request; the ledger records what the service charged. Measured on
+# a 20 s clip (D-073, one run each): about 105 tokens per second at Gemini 3.7 Flash, about 600 at
+# Qwen 3.8 Omni Flash, so the estimate is high for the first and low for the second.
+VIDEO_TOKENS_PER_S = 300
+
+
+def estimate_video_request_usd(model: str, prompt_chars: int, video_seconds: float) -> float | None:
+    """The estimated cost of one request with a video clip before it is sent.
+
+    Returns `None` for a model that is not in the table (no price, no guess).
+    """
+    prices = OPENROUTER_PRICES_USD_PER_MTOK.get(model)
+    if prices is None:
+        return None
+    tokens_in = -(-max(prompt_chars, 0) // CHARS_PER_TOKEN) + round(
+        max(video_seconds, 0.0) * VIDEO_TOKENS_PER_S
+    )
+    return (tokens_in * prices[0] + ESTIMATED_OUTPUT_TOKENS * prices[1]) / _PER_MILLION
 
 
 def estimate_request_usd(model: str, prompt_chars: int) -> float | None:
