@@ -24,6 +24,8 @@ from aicoach.clips import (
     find_current_event,
 )
 from aicoach.config import load_settings
+from aicoach.corner_cli import add_commands as add_corner_commands
+from aicoach.corner_cli import run_command as run_corner_command
 from aicoach.episode import NOT_VERIFIED, describe_episode
 from aicoach.errors import AicoachError, ConfigError
 from aicoach.eval.final_run import DEFAULT_TDEED_THRESHOLD, FinalPaths, run_final_eval
@@ -383,6 +385,7 @@ def build_parser() -> argparse.ArgumentParser:
     rev.add_argument("--model-db", default="aicoach_model.db", help="in the match dir")
     rev.add_argument("--tdeed", required=True, help="T-DEED JSON file name in the match dir")
     rev.add_argument("--output", type=Path, default=Path("docs") / "metrics.md")
+    add_corner_commands(commands)
     return parser
 
 
@@ -909,6 +912,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _agent_eval(args)
         if args.command == "speech-test":
             return _speech_test(args)
+        corner_code = run_corner_command(args)
+        if corner_code is not None:
+            return corner_code
         return _calibrate(args)
     except AicoachError as err:
         sys.stderr.write(f"error: {err}\n")

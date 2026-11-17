@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeVar
 
+from aicoach.corner_tags.schemas import CornerTagsFile
+from aicoach.corner_tags.stage import run_corner_tags
 from aicoach.errors import AicoachError
 from aicoach.fusion.config import FuseConfig
 from aicoach.fusion.schemas import CandidatesResult
@@ -31,6 +33,8 @@ from aicoach.speech.transcript import TranscriptResult
 from aicoach.spotting.schemas import load_tdeed_file
 from aicoach.stage_common import Logger, elapsed_ms, finish_timing, set_status
 from aicoach.status import utc_now_iso
+from aicoach.teams.stage import run_teams
+from aicoach.teams.store import TeamsResult
 
 STAGE = "run"
 _STEPS = ("scoreboard", "plates", "fuse")
@@ -40,7 +44,8 @@ _T = TypeVar("_T")
 @dataclass(frozen=True)
 class Stages:
     """The stage functions; the real ones by default, fakes in tests (`run` uses three of them,
-    `ingest` also `plate_names`, `transcribe` and `review_candidates`).
+    `ingest` also `plate_names`, `transcribe`, `review_candidates`, `teams` and
+    `corner_tags`).
 
     Typed as `Callable[..., X]` on purpose: the stages take different arguments and the
     pipeline calls them by keyword, so a precise type would only repeat their signatures.
@@ -52,6 +57,8 @@ class Stages:
     plate_names: Callable[..., PlateNamesResult | None] = run_plate_names
     transcribe: Callable[..., TranscriptResult | None] = run_transcribe
     review_candidates: Callable[..., ReviewCandidatesResult] = run_review_candidates
+    teams: Callable[..., TeamsResult] = run_teams
+    corner_tags: Callable[..., CornerTagsFile | None] = run_corner_tags
 
 
 @dataclass(frozen=True)

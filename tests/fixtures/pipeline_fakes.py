@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from aicoach.corner_tags.schemas import CornerTagsFile
 from aicoach.errors import PlatesError
 from aicoach.fusion.config import FuseConfig
 from aicoach.fusion.schemas import CandidatesResult
@@ -11,6 +12,7 @@ from aicoach.plates.schemas import PlatesResult
 from aicoach.review.schemas import ReviewCandidatesResult
 from aicoach.scoreboard.schemas import ScoreboardResult
 from aicoach.speech.transcript import TranscriptResult
+from aicoach.teams.store import TeamEntry, TeamsResult
 from tests.fixtures.fusion_synth import plates_result
 from tests.fixtures.plates_synth import scoreboard_result
 
@@ -64,6 +66,15 @@ class Recorder:
             counts={},
         )
 
+    def teams(self, *args: Any, **kwargs: Any) -> TeamsResult:
+        self._record("teams", args, kwargs)
+        entry = TeamEntry(name="хозяева", name_source="default")
+        return TeamsResult(match_id="m", cache_key="k", home=entry, away=entry)
+
+    def corner_tags(self, *args: Any, **kwargs: Any) -> CornerTagsFile | None:
+        self._record("corner_tags", args, kwargs)
+        return None  # as a skipped step: the ingest must not depend on the tags
+
     def fusion(self, *args: Any, **kwargs: Any) -> CandidatesResult:
         self._record("fusion", args, kwargs)
         return CandidatesResult(
@@ -91,4 +102,6 @@ class Recorder:
             plate_names=self.plate_names,
             transcribe=self.transcribe,
             review_candidates=self.review_candidates,
+            teams=self.teams,
+            corner_tags=self.corner_tags,
         )

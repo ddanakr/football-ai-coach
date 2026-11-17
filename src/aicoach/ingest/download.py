@@ -45,6 +45,9 @@ def ytdlp_options(target_dir: Path, hook: Callable[[dict[str, Any]], None]) -> d
         "merge_output_format": "mp4",
         "paths": {"home": str(target_dir), "temp": str(target_dir)},
         "outtmpl": {"default": "src.%(ext)s"},
+        # `src.info.json` keeps the title of the video: the team names of a match without a
+        # lineup come from it (D-078).
+        "writeinfojson": True,
         "continuedl": True,
         "noplaylist": True,
         "retries": RETRIES,

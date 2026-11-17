@@ -33,6 +33,8 @@ from aicoach.agent.transcript_tools import (
 )
 from aicoach.agent.validator import numbers_in
 from aicoach.clips import DEFAULT_AFTER_S, DEFAULT_BEFORE_S
+from aicoach.corner_tags.schemas import CHOICES, FIELDS, normalize_value
+from aicoach.corner_tags.view import TEAM_CHOICES, CornerFilter, CornerView, matches
 from aicoach.domain.events import EventType
 from aicoach.episode import EpisodeDescription
 from aicoach.errors import ExportError, ExternalServiceError
@@ -46,6 +48,10 @@ MAX_LIMIT = 50
 MAX_PLAYERS = 5
 MAX_CLIP_SIDE_S = 60.0
 ACCURACY_NOTE = "Это события, найденные системой автоматически, а не официальная статистика."
+CORNER_TAGS_NOTE = (
+    "Теги углового (corner_tags) прочитала видеомодель по клипу: это данные, а не факт, "
+    "не проверено. unclear значит «не видно». Команда подачи определена по цвету формы."
+)
 
 ClipMaker = Callable[[str, float, float], Path]
 EpisodeDescriber = Callable[[str], EpisodeDescription]
@@ -66,6 +72,14 @@ class QueryEventsArgs(_Args):
     side: Literal["home", "away", "unknown"] | None = None
     player: str | None = Field(default=None, max_length=100)
     card: bool | None = None
+    # Filters over the tags a video model read from the clip of a corner (D-078); any of them
+    # selects corners that have tags (a code, or its Russian name; unclear is 'не видно').
+    corner_team: str | None = Field(default=None, max_length=40)
+    corner_kit: str | None = Field(default=None, max_length=40)
+    corner_delivery: str | None = Field(default=None, max_length=40)
+    corner_zone: str | None = Field(default=None, max_length=40)
+    corner_first_contact: str | None = Field(default=None, max_length=40)
+    corner_outcome: str | None = Field(default=None, max_length=40)
     limit: int = Field(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT)
 
 
@@ -135,6 +149,40 @@ QUERY_EVENTS = _spec(
         "card": {
             "type": "boolean",
             "description": "true: только фолы, за которые показана карточка (по плашке)",
+        },
+        "corner_team": {
+            "type": "string",
+            "enum": list(TEAM_CHOICES),
+            "description": "угловые, которые подаёт эта сторона (по цвету формы на клипе, "
+            "не проверено); unknown: команда подачи не определена",
+        },
+        "corner_kit": {
+            "type": "string",
+            "enum": list(CHOICES["attacking_kit"]),
+            "description": "угловые, где подающие в форме этого цвета (по клипу, не проверено)",
+        },
+        "corner_delivery": {
+            "type": "string",
+            "enum": list(CHOICES["delivery"]),
+            "description": "угловые с такой подачей: cross навес, short короткий, "
+            "low_ball прострел низом, unclear не видно (по клипу, не проверено)",
+        },
+        "corner_zone": {
+            "type": "string",
+            "enum": list(CHOICES["zone"]),
+            "description": "угловые, где мяч прилетел в эту зону (по клипу, не проверено)",
+        },
+        "corner_first_contact": {
+            "type": "string",
+            "enum": list(CHOICES["first_contact"]),
+            "description": "угловые, где первым мяча коснулся attack, defence, keeper или "
+            "nobody (по клипу, не проверено)",
+        },
+        "corner_outcome": {
+            "type": "string",
+            "enum": list(CHOICES["outcome"]),
+            "description": "угловые с таким исходом, например shot удар, goal гол, cleared "
+            "выбили (по клипу, не проверено)",
         },
         "limit": {"type": "integer", "description": f"сколько вернуть, до {MAX_LIMIT}"},
     },
@@ -270,9 +318,21 @@ def event_json(facts: EventFacts, team_names: Mapping[str, str]) -> Result:
         result["unrecognized_names"] = len(facts.players) - len(named)
     if facts.card is not None:
         result["card"] = facts.card  # "yellow" or "red"
+    if facts.corner is not None:
+        result["corner_tags"] = corner_tags_json(facts.corner, team_names)
     if event.type == EventType.SUBST:
         result["substitution"] = _substitution(facts.players)
     return result
+
+
+def corner_tags_json(view: CornerView, team_names: Mapping[str, str]) -> Result:
+    """The tags of a corner for the model: codes (`unclear` is "не видно"), the attacking side
+    worked out from the kit colour, and the source, so that the answer can say "by the clip"."""
+    tags: Result = {name: view.value(name) for name in FIELDS}
+    tags["attacking_team"] = view.side
+    tags["attacking_team_name"] = team_names.get(view.side) if view.side else None
+    tags["source"] = "clip_model_unverified"
+    return tags
 
 
 def _substitution(players: tuple[PlayerRead, ...]) -> Result:
@@ -284,6 +344,43 @@ def _substitution(players: tuple[PlayerRead, ...]) -> Result:
         if key is not None:
             names[key] = p.name
     return names
+
+
+_CORNER_ARGS = {
+    "corner_kit": "attacking_kit",
+    "corner_delivery": "delivery",
+    "corner_zone": "zone",
+    "corner_first_contact": "first_contact",
+    "corner_outcome": "outcome",
+}
+
+
+class CornerFilterError(ValueError):
+    """A corner filter value is not an allowed code or Russian name of its field."""
+
+
+def corner_filter(a: QueryEventsArgs) -> CornerFilter:
+    """The corner filter of the query arguments.
+
+    Raises:
+        CornerFilterError: A value is not allowed for its field.
+    """
+    fields: dict[str, str] = {}
+    for arg, field_name in _CORNER_ARGS.items():
+        raw: str | None = getattr(a, arg)
+        if raw is None:
+            continue
+        code = normalize_value(field_name, raw)
+        if code is None:
+            allowed = ", ".join(CHOICES[field_name])
+            msg = f"{arg}: недопустимое значение {raw!r}, допустимы {allowed}"
+            raise CornerFilterError(msg)
+        fields[field_name] = code
+    team = a.corner_team
+    if team is not None and team not in TEAM_CHOICES:
+        msg = f"corner_team: допустимы {', '.join(TEAM_CHOICES)}"
+        raise CornerFilterError(msg)
+    return CornerFilter(team=team, fields=fields)
 
 
 def _has_player(facts: EventFacts, query: str) -> bool:
@@ -309,6 +406,8 @@ class ToolBox:
     episode_describer: EpisodeDescriber | None = None
     # Set when a description reached the model: the answer must then carry the mark (D-074).
     episode_described: bool = False
+    # Set when corner tags reached the model: the answer must then carry the mark (D-078).
+    corner_tags_shown: bool = False
     seen_event_ids: set[str] = field(default_factory=set)
     seen_names: set[str] = field(default_factory=set)
     seen_numbers: set[float] = field(default_factory=set)
@@ -372,6 +471,8 @@ class ToolBox:
         """The event for the model; remembers its id and names as handed out."""
         self.seen_event_ids.add(facts.event.event_id)
         self.seen_names.update(p.name for p in facts.players if p.name)
+        if facts.corner is not None:
+            self.corner_tags_shown = True
         return event_json(facts, self.ctx.team_names)
 
     def _emit_segment(self, facts: SegmentFacts) -> Result:
@@ -452,9 +553,13 @@ class ToolBox:
         a = QueryEventsArgs.model_validate(args)
         if a.minute_from is not None and a.minute_to is not None and a.minute_from > a.minute_to:
             return {"error": "minute_from больше minute_to"}
+        try:
+            corners = corner_filter(a)
+        except CornerFilterError as err:
+            return {"error": str(err)}
         # Every filter except the side first: the events whose team is unknown must be counted
         # when the side is asked for, so that "no shots" is not said about "shots of unknown team".
-        fitting = [f for f in self.ctx.events if self._passes(f, a)]
+        fitting = [f for f in self.ctx.events if self._passes(f, a, corners)]
         by_minute = a.minute_from is not None or a.minute_to is not None
         without_minute = 0
         if by_minute:
@@ -472,6 +577,8 @@ class ToolBox:
         }
         if len(rows) > len(shown):
             result["truncated"] = True
+        if corners.active or any(f.corner is not None for f in shown):
+            result["corner_tags_note"] = CORNER_TAGS_NOTE
         if without_minute:
             result["without_known_minute"] = without_minute  # not in `total`: no clock there
         unknown_team = sum(f.event.team is None for f in fitting)
@@ -490,7 +597,7 @@ class ToolBox:
         return facts.event.team is None if side == "unknown" else facts.event.team == side
 
     @staticmethod
-    def _passes(facts: EventFacts, a: QueryEventsArgs) -> bool:
+    def _passes(facts: EventFacts, a: QueryEventsArgs, corners: CornerFilter) -> bool:
         """All filters except the side and the minutes."""
         event = facts.event
         if a.type is not None and event.type != a.type:
@@ -498,6 +605,8 @@ class ToolBox:
         if a.half is not None and event.half != a.half:
             return False
         if a.card is not None and (facts.card is not None) != a.card:
+            return False
+        if not matches(facts.corner, corners):
             return False
         return a.player is None or _has_player(facts, a.player)
 

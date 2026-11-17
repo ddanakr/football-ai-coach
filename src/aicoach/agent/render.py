@@ -116,6 +116,15 @@ def with_episode_mark(segments: list[Segment]) -> list[Segment]:
     return [*segments, "\n\n", ru.EPISODE_ANSWER_MARK]
 
 
+def with_corner_mark(segments: list[Segment]) -> list[Segment]:
+    """The answer with the mark of unverified corner tags, added by code (D-078, as D-074):
+    the tags are a model's reading of a clip, and the mark must not depend on the answering
+    model remembering it."""
+    if has_episode_mark(segments):
+        return segments
+    return [*segments, "\n\n", ru.CORNER_TAGS_ANSWER_MARK]
+
+
 def count_links(segments: list[Segment]) -> int:
     """How many event links the rendered answer has."""
     return sum(isinstance(s, EventRef) for s in segments)
