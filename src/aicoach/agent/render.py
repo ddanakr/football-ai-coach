@@ -4,6 +4,7 @@ The model writes only ids. The label (type, half, game minute, video time) and t
 come from the database and the scoreboard, never from the model (CLAUDE.md section 5, rule 6).
 """
 
+import re
 from dataclasses import dataclass
 
 from aicoach.agent.context import EventFacts, MatchContext, SegmentFacts
@@ -23,6 +24,8 @@ class EventRef:
 
 
 Segment = str | EventRef
+# The two phrases side by side (a comma, a colon or a dash may stand between them).
+_EPISODE_MARK = re.compile(r"по клипу\W{0,5}не проверено")
 
 
 def event_label(facts: EventFacts) -> str:
@@ -97,6 +100,20 @@ def render_answer(text: str, ctx: MatchContext, youtube_id: str | None = None) -
     if position < len(text):
         segments.append(text[position:])
     return segments
+
+
+def has_episode_mark(segments: list[Segment]) -> bool:
+    """Whether the answer already says "by the clip, not verified" (any case, side by side)."""
+    text = "".join(s for s in segments if isinstance(s, str)).casefold()
+    return _EPISODE_MARK.search(text) is not None
+
+
+def with_episode_mark(segments: list[Segment]) -> list[Segment]:
+    """The answer with the mark of an unverified description, added by code (D-074): the prompt
+    asks the model to write it, but a model may forget, and the mark must not depend on that."""
+    if has_episode_mark(segments):
+        return segments
+    return [*segments, "\n\n", ru.EPISODE_ANSWER_MARK]
 
 
 def count_links(segments: list[Segment]) -> int:

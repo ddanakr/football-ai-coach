@@ -35,6 +35,10 @@ DEFAULT_OPENROUTER_TRANSCRIBE_MODEL = "google/gemini-3.5-transcribe"
 # words against 54 of 77 for the Gemini model and gave word times and speakers on every fragment.
 DEFAULT_SPEECH_MODEL = "elevenlabs/scribe-v2"
 
+# The model that watches a clip for the episode description (FR-11, D-073): an OpenRouter slug
+# whose `input_modalities` include `video` (https://openrouter.ai/api/v1/models, 2026-11-18).
+DEFAULT_VLM_MODEL = "google/gemini-3.7-flash"
+
 Provider = Literal["openrouter", "gemini"]
 
 # src/aicoach/config.py -> repository root.
@@ -63,6 +67,8 @@ class Settings(BaseSettings):
     openrouter_api_key: SecretStr | None = None
     # The agent model of the provider openrouter; `GEMINI_MODEL` is for the provider gemini only.
     aicoach_agent_model: str = DEFAULT_AGENT_MODEL
+    # The video model of the episode description; it always goes through OpenRouter (D-073).
+    aicoach_vlm_model: str = DEFAULT_VLM_MODEL
     aicoach_llm_provider: Provider = "openrouter"
     # The monthly ceiling of paid requests, US dollars; not set means no ceiling (D-067).
     aicoach_budget_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)
@@ -99,6 +105,11 @@ class Settings(BaseSettings):
     @classmethod
     def _blank_agent_model_is_default(cls, value: str) -> str:
         return value.strip() or DEFAULT_AGENT_MODEL
+
+    @field_validator("aicoach_vlm_model", mode="after")
+    @classmethod
+    def _blank_vlm_model_is_default(cls, value: str) -> str:
+        return value.strip() or DEFAULT_VLM_MODEL
 
     @field_validator("gemini_transcribe_model", mode="after")
     @classmethod

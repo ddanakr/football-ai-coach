@@ -15,9 +15,15 @@ from typing import TypeVar
 from pydantic import ValidationError
 
 from aicoach.agent.evaluation import ANSWERS_FILE, format_summary, read_questions, run_questions
-from aicoach.agent.service import build_runtime, make_llm
-from aicoach.clips import DEFAULT_AFTER_S, DEFAULT_BEFORE_S, export_event_clip
+from aicoach.agent.service import build_runtime, make_llm, make_video_model, optional_video_model
+from aicoach.clips import (
+    DEFAULT_AFTER_S,
+    DEFAULT_BEFORE_S,
+    export_event_clip,
+    find_current_event,
+)
 from aicoach.config import load_settings
+from aicoach.episode import NOT_VERIFIED, describe_episode
 from aicoach.errors import AicoachError, ConfigError
 from aicoach.eval.final_run import DEFAULT_TDEED_THRESHOLD, FinalPaths, run_final_eval
 from aicoach.fusion.config import load_fuse_config
@@ -174,6 +180,24 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=DEFAULT_AFTER_S,
         help=f"seconds after (default: {DEFAULT_AFTER_S:g})",
+    )
+
+    describe = commands.add_parser(
+        "describe",
+        help="describe the episode of one event from its clip with a video model (FR-11)",
+    )
+    describe.add_argument("--video", type=Path, required=True, help="path of the match video")
+    describe.add_argument(
+        "--event-id", required=True, help="event id from events_current, e.g. p:12"
+    )
+    describe.add_argument("--match-id", help="default: name of the video's directory")
+    describe.add_argument(
+        "--db", type=Path, help="database file (default: aicoach.db by the video)"
+    )
+    describe.add_argument("--before", type=float, default=DEFAULT_BEFORE_S, help="seconds before")
+    describe.add_argument("--after", type=float, default=DEFAULT_AFTER_S, help="seconds after")
+    describe.add_argument(
+        "--model", help="OpenRouter model with video input (default: AICOACH_VLM_MODEL, config.py)"
     )
 
     agent_eval = commands.add_parser(
@@ -545,6 +569,7 @@ def _agent_eval(args: argparse.Namespace) -> int:
         _match_id(args),
         match_dir,
         args.video,
+        optional_video_model(settings, match_dir),
     )
     output = args.output or match_dir / ANSWERS_FILE
     summary = run_questions(runtime.agent, questions, runtime.box_factory, output)
@@ -624,6 +649,23 @@ def _clip(args: argparse.Namespace) -> int:
     return 0
 
 
+def _describe(args: argparse.Namespace) -> int:
+    """Describe one event from its clip; print the text with the model, the cost and the mark."""
+    settings = load_settings()
+    match_dir = args.video.parent
+    vlm = make_video_model(settings, match_dir, args.model)
+    event = find_current_event(args.db or match_dir / DB_FILE, _match_id(args), args.event_id)
+    result = describe_episode(args.video, event, vlm, before_s=args.before, after_s=args.after)
+    cost = "unknown" if result.cost_usd is None else f"{result.cost_usd:.4f} USD"
+    sys.stdout.write(
+        f"event: {result.event_id} {result.type.value} t_v={result.t_v:.1f}\n"
+        f"model: {result.model}\ncached: {result.cached}\n"
+        f"tokens: {result.tokens_in} in, {result.tokens_out} out\ncost: {cost}\n"
+        f"{NOT_VERIFIED}: {result.text}\n"
+    )
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run a command; returns the process exit code (0 ok, 2 on a handled error, 3 while
     `ingest` waits for the T-DEED file)."""
@@ -652,6 +694,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _ui(args)
         if args.command == "clip":
             return _clip(args)
+        if args.command == "describe":
+            return _describe(args)
         if args.command == "agent-eval":
             return _agent_eval(args)
         if args.command == "speech-test":

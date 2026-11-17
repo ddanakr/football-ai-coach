@@ -8,7 +8,7 @@ from pathlib import Path
 import streamlit as st
 
 from aicoach.agent.loop import AgentAnswer
-from aicoach.agent.service import AgentRuntime, build_runtime, make_llm
+from aicoach.agent.service import AgentRuntime, build_runtime, make_llm, optional_video_model
 from aicoach.config import load_settings
 from aicoach.errors import AicoachError
 from aicoach.i18n import ru
@@ -50,12 +50,14 @@ def _runtime(args: AppArgs) -> AgentRuntime:
         runtime: AgentRuntime = cached[1]
         return runtime
     st.session_state[HISTORY_KEY] = []  # another match: the old questions do not belong to it
+    settings = load_settings()
     runtime = build_runtime(
-        make_llm(load_settings(), args.results_dir),
+        make_llm(settings, args.results_dir),
         args.db,
         args.match_id,
         args.results_dir,
         args.video,
+        optional_video_model(settings, args.results_dir),
     )
     st.session_state[_RUNTIME_KEY] = (identity, runtime)
     return runtime

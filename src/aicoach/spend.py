@@ -25,18 +25,19 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from aicoach.agent.llm import LLMClient
 from aicoach.agent.messages import HistoryItem, ModelTurn, ToolResults, ToolSpec, UserMessage
-from aicoach.agent.pricing import cost_of, estimate_request_usd
+from aicoach.agent.pricing import cost_of, estimate_request_usd, estimate_video_request_usd
 from aicoach.config import Provider, Settings
 from aicoach.errors import BudgetExceededError, StorageError
 from aicoach.i18n import ru
 from aicoach.speech.pricing import estimate_transcription_usd
 from aicoach.speech.transcriber import RawTranscript, Transcriber
+from aicoach.vlm import VideoModel, VideoReply
 
 logger = structlog.get_logger()
 
 LEDGER_FILE = "spend_ledger.jsonl"
 Basis = Literal["actual", "estimate", "free"]
-Kind = Literal["agent", "transcribe"]
+Kind = Literal["agent", "transcribe", "vision"]
 Clock = Callable[[], datetime]
 
 
@@ -318,3 +319,56 @@ class MeteredTranscriber:
             audio_seconds=seconds,
         )
         return raw
+
+
+class MeteredVideoModel:
+    """A `VideoModel` with the same budget check and record: the estimate is the prompt plus the
+    length of the clip at the table price; the record is what the service charged."""
+
+    def __init__(self, inner: VideoModel, ledger: SpendLedger, provider: Provider) -> None:
+        self._inner = inner
+        self._ledger = ledger
+        self._provider = provider
+
+    @property
+    def model(self) -> str:
+        """The model name of the inner client."""
+        return self._inner.model
+
+    def describe(
+        self, system: str, prompt: str, video: bytes, *, video_seconds: float | None = None
+    ) -> VideoReply:
+        """One request, see `VideoModel.describe`.
+
+        Raises:
+            BudgetExceededError: The request would pass the budget (it is not sent).
+            ExternalServiceError: The service failed for good (nothing is recorded).
+            StorageError: The ledger cannot be read or written.
+        """
+        paid = self._provider != "gemini"
+        if paid:
+            self._ledger.check(
+                estimate_video_request_usd(
+                    self.model, len(system) + len(prompt), video_seconds or 0.0
+                )
+            )
+        reply = self._inner.describe(system, prompt, video, video_seconds=video_seconds)
+        usage = reply.usage
+        cost: float | None
+        basis: Basis
+        if not paid:
+            cost, basis = 0.0, "free"
+        elif usage.cost_usd is not None:
+            cost, basis = usage.cost_usd, "actual"
+        else:
+            cost, basis = cost_of(self.model, usage), "estimate"
+        self._ledger.record(
+            self._provider,
+            self.model,
+            "vision",
+            cost,
+            basis,
+            tokens_in=usage.input_tokens,
+            tokens_out=usage.output_tokens,
+        )
+        return reply

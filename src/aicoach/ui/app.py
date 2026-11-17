@@ -41,6 +41,7 @@ from aicoach.ui.edits import (
     plan_retype,
     with_derived_half,
 )
+from aicoach.ui.episode_panel import render_describe
 from aicoach.ui.ingest_jobs import (
     IngestJob,
     busy_pid,
@@ -266,6 +267,12 @@ def _render_clip_panel(args: AppArgs, selected: CurrentEvent | None) -> None:
             args=(args, args.video, None if selected is None else selected.event_id),
             disabled=args.video is None or selected is None,
             help=ru.CLIP_EXPORT_HELP,
+        )
+        render_describe(
+            args,
+            selected,
+            float(st.session_state[_CLIP_BEFORE]),
+            float(st.session_state[_CLIP_AFTER]),
         )
         _show_clip()
 
