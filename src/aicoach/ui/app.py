@@ -51,6 +51,7 @@ from aicoach.ui.ingest_jobs import (
     save_lineup,
     step_rows,
 )
+from aicoach.ui.labels_panel import render_labels
 from aicoach.ui.launch import AppArgs, StartArgs, parse_start_args
 from aicoach.ui.logic import (
     EventFilter,
@@ -67,6 +68,7 @@ from aicoach.ui.logic import (
     type_label,
     youtube_link,
 )
+from aicoach.ui.reel_panel import render_reel
 from aicoach.ui.review_logic import ReviewRow, filter_review_rows
 from aicoach.ui.review_panel import (
     ReviewView,
@@ -612,6 +614,8 @@ def main() -> None:
         render_agent_panel(args, _select_event)
     _render_edit_panel(args, selected, n_edits)
     _render_clip_panel(args, selected)
+    render_reel(args)
+    render_labels(args)
 
 
 main()
