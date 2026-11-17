@@ -74,6 +74,7 @@ class _FakeTranscriber:
 
     def __init__(self) -> None:
         self.vocabularies: list[Sequence[str] | None] = []
+        self.durations: list[float | None] = []
 
     def transcribe(
         self,
@@ -81,7 +82,9 @@ class _FakeTranscriber:
         mime_type: str,  # noqa: ARG002
         *,
         vocabulary: Sequence[str] | None = None,
+        duration_s: float | None = None,
     ) -> RawTranscript:
+        self.durations.append(duration_s)
         self.vocabularies.append(vocabulary)
         if vocabulary is not None:
             return RawTranscript("Ветров тащил мяч", (), 7, 3)
@@ -149,3 +152,39 @@ def test_lineup_terms_from_a_file_and_none_without_it(tmp_path: Path) -> None:
     with pytest.raises(TranscriptionError):
         lineup_terms(tmp_path / "none.csv", required=True)
     assert lineup_terms(None) is None
+
+
+@pytest.mark.unit
+def test_run_passes_the_fragment_length_so_that_the_spending_estimate_has_seconds(
+    tmp_path: Path,
+) -> None:
+    fake = _FakeTranscriber()
+
+    run_speech_test(tmp_path / "v.mp4", [_fragment()], tmp_path / "o", fake, cutter=_snd)
+
+    assert fake.durations == [60.0]
+
+
+@pytest.mark.unit
+def test_summary_reports_the_cost_and_the_stretches_without_speech(tmp_path: Path) -> None:
+    class Costly(_FakeTranscriber):
+        def transcribe(
+            self,
+            audio: bytes,
+            mime_type: str,
+            *,
+            vocabulary: Sequence[str] | None = None,
+            duration_s: float | None = None,
+        ) -> RawTranscript:
+            raw = super().transcribe(audio, mime_type, vocabulary=vocabulary, duration_s=duration_s)
+            return RawTranscript(raw.text, raw.words, 0, 0, 60.0, 0.0037)
+
+    out = tmp_path / "o"
+    runs = run_speech_test(tmp_path / "v.mp4", [_fragment()], out, Costly(), cutter=_snd)
+
+    summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))["runs"][0]
+    assert summary["cost_usd"] == 0.0037
+    assert summary["gaps"] == [{"start_s": 2.0, "end_s": 60.0}]  # speech stops at 2 s of 60
+    text = format_summary(runs)
+    assert "cost USD 0.00370" in text
+    assert "no segments for 15 s and more: 2-60 s" in text

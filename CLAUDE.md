@@ -71,6 +71,8 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 │   ├── clips.py        # команда `clip`: экспорт клипа FFmpeg (D-056): окно `clip_window`, время из events_current, перекодирование H.264/AAC, `clips/` рядом с видео, готовый файл не режется заново
 │   ├── errors.py       # иерархия исключений
 │   ├── logging_setup.py  # structlog, JSON-строки в stderr
+│   ├── openrouter.py   # общий HTTP-доступ к OpenRouter: ключ в заголовке, повторы на 429 и 5xx, `OpenRouterError`, разбор стоимости и счётчиков (D-068)
+│   ├── spend.py        # журнал трат `spend_ledger.jsonl` и месячный бюджет `AICOACH_BUDGET_USD`; обёртки `MeteredLLM` и `MeteredTranscriber` (D-067)
 │   ├── config.py       # `Settings` (pydantic-settings): GEMINI_API_KEY, GEMINI_MODEL, AICOACH_DATA_ROOT, TESSERACT_CMD; приоритет флаг CLI → переменная окружения → `.env` в корне → умолчание; `load_settings`, `read_gemini_api_key` (D-057, D-060)
 │   ├── youtube.py      # id видео YouTube (проверка: 11 знаков) и плоская ссылка просмотра; общий для ingest и ui
 │   ├── i18n/           # тексты интерфейса: ru.py (казахский: план)
@@ -112,16 +114,22 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 │   │   ├── media.py        # проверка кадра 1280×720 и `audio.wav` 16 кГц моно через FFmpeg
 │   │   ├── lock.py         # `ingest.lock` с pid: один ingest на каталог матча, замок умершего процесса снимается
 │   │   └── stage.py        # `run_ingest`: каталог матча, образцы табло, шаги со статусами в `status.json`, ожидание T-DEED, слияние
-│   ├── speech/         # план
+│   ├── speech/         # тест расшифровки речи (D-066, D-068), стадии на весь матч пока нет
+│   │   ├── transcriber.py  # `Transcriber` (Protocol), `RawTranscript` и `GeminiTranscriber` (прямой Gemini)
+│   │   ├── openrouter_stt.py  # `OpenRouterTranscriber`: scribe-v2 и gemini-3.5-transcribe через OpenRouter (D-068)
+│   │   ├── service.py      # `make_transcriber`: поставщик из настроек, обёртка журналом трат
+│   │   ├── pricing.py      # цены расшифровки за секунду звука с источником (оценка до запроса)
+│   │   └── audio.py  check_file.py  segments.py  metrics.py  run.py   # нарезка звука, файл проверки слушателя, реплики с `t_v`, доля найденных слов и `time_gaps`, команда `speech-test`
 │   ├── agent/          # LLM-агент на Gemini (FR-8, D-061): инструменты над events_current, в ответе ссылки [E:id] вместо таймкодов, проверка ответа
 │   │   ├── context.py      # `MatchContext`: события, игровая минута по табло, имена с плашек, состав; `load_context`
 │   │   ├── tools.py        # `ToolBox`: match_info, query_events, get_event, find_player, make_clip; помнит выданные id, имена и числа
 │   │   ├── validator.py    # проверка ответа: ссылки, время, адреса, имена, числа цифрами
 │   │   ├── render.py       # ссылки [E:id] → метка (тип, тайм, минута, время видео) и ссылка YouTube
-│   │   ├── llm.py          # `LLMClient` (Protocol) и `GeminiClient` (google-genai, повторы на 429 и 5xx)
+│   │   ├── llm.py          # `LLMClient` (Protocol) и два клиента: `GeminiClient` (google-genai, повторы на 429 и 5xx) и `OpenRouterClient` в `openrouter_llm.py` (D-068)
+│   │   ├── openrouter_llm.py  # `OpenRouterClient`: чат OpenRouter в формате OpenAI, вызов инструментов, стоимость из ответа
 │   │   ├── loop.py         # `Agent`: цикл вызовов (до 6 на вопрос), одна повторная попытка, отказ; системный промпт в `system_prompt.md`
 │   │   ├── evaluation.py   # команда `agent-eval`: вопросы CSV → `answers.csv`, сводка проверки
-│   │   └── service.py  names.py  messages.py  journal.py  pricing.py   # сборка агента для матча; сравнение имён; сообщения; журнал `agent_log.jsonl`; цены с источником
+│   │   └── service.py  names.py  messages.py  journal.py  pricing.py   # сборка агента для матча и `make_llm` (поставщик из настроек `AICOACH_LLM_PROVIDER`, обёртка журналом трат); сравнение имён; сообщения; журнал `agent_log.jsonl`; цены с источником
 │   └── ui/             # просмотр событий, ручные правки и экспорт клипа (Streamlit, D-054, D-055, D-056)
 │       ├── app.py          # тонкий скрипт Streamlit (D-062): сверху плеер st.video слева и панель «Агент» справа (колонки 3 : 2), под ними таблица событий с выбором строки на всю ширину, фильтры и экспорт клипа в боковой панели
 │       ├── logic.py        # чистые функции: фильтры, mm:ss, подписи, youtube_link, строки таблицы, выбор строки → событие
@@ -175,7 +183,7 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 
 **Отказоустойчивость:**
 
-- Иерархия исключений в `errors.py`: базовый `AicoachError`; наследники `IngestError`, `ScoreboardParseError`, `PlatesError`, `SpottingError`, `TranscriptionError`, `FusionError`, `StorageError`, `EvalError`, `AgentValidationError`, `ConfigError`, `ExternalServiceError`, `ExportError`.
+- Иерархия исключений в `errors.py`: базовый `AicoachError`; наследники `IngestError`, `ScoreboardParseError`, `PlatesError`, `SpottingError`, `TranscriptionError`, `FusionError`, `StorageError`, `EvalError`, `AgentValidationError`, `ConfigError`, `ExternalServiceError`, `ExportError`, `BudgetExceededError`.
 - Запрещены голый `except:`, `except Exception: pass` и проглатывание ошибки без записи в лог. Исключение либо обрабатывается осмысленно, либо оборачивается в типизированное и поднимается выше с `raise ... from err`.
 - Вход проверяется на границах (CLI, файлы, ответы API и моделей) схемами `pydantic`. Внутри ядра данные считаются проверенными.
 - Внешние вызовы (LLM API, загрузка): таймаут обязателен, повтор с экспоненциальной задержкой на временные ошибки (429, 5xx, сеть), затем `ExternalServiceError`. Ответ языковой модели проверяется схемой и валидатором ссылок.

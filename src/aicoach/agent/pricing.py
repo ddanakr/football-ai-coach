@@ -22,9 +22,45 @@ _PER_MILLION = 1_000_000
 
 
 def cost_usd(model: str, usage: Usage) -> float | None:
-    """The cost of `usage` at the paid-tier price of `model`; `None` for an unknown model."""
-    prices = PRICES_USD_PER_MTOK.get(model)
+    """The cost of `usage` at the table price of `model` (Gemini paid tier or OpenRouter);
+    `None` for an unknown model."""
+    prices = PRICES_USD_PER_MTOK.get(model) or OPENROUTER_PRICES_USD_PER_MTOK.get(model)
     if prices is None:
         return None
     price_in, price_out = prices
     return (usage.input_tokens * price_in + usage.output_tokens * price_out) / _PER_MILLION
+
+
+def cost_of(model: str, usage: Usage) -> float | None:
+    """The cost the service charged (`usage.cost_usd`), else the table price, else `None`."""
+    return usage.cost_usd if usage.cost_usd is not None else cost_usd(model, usage)
+
+
+# OpenRouter, US dollars per 1M tokens (input, output): `pricing.prompt` and `pricing.completion`
+# of each model in https://openrouter.ai/api/v1/models multiplied by 1e6, read on 2026-11-17.
+# Used only for the estimate BEFORE a request (the budget check); the real cost is what
+# OpenRouter reports in the response. Two models have a dearer tier for very long prompts (over
+# 272000 tokens for gpt-6-luna, over 100000 for claude-haiku-5.5): the questions are far below that.
+OPENROUTER_PRICES_USD_PER_MTOK: dict[str, tuple[float, float]] = {
+    "google/gemini-3.5-flash-lite": (0.30, 2.50),
+    "google/gemini-3.7-flash": (0.75, 3.75),
+    "openai/gpt-6-luna": (0.10, 0.50),
+    "anthropic/claude-haiku-5.5": (0.10, 0.50),
+}
+# The estimate of a request before it is sent. Our prompts are mostly Russian text: about two
+# characters per token is a deliberately high count (more tokens, a higher estimate). The answer
+# is assumed to be at most this long; both are assumptions, not measurements.
+CHARS_PER_TOKEN = 2
+ESTIMATED_OUTPUT_TOKENS = 1000
+
+
+def estimate_request_usd(model: str, prompt_chars: int) -> float | None:
+    """The estimated cost of one OpenRouter chat request before it is sent.
+
+    Returns `None` for a model that is not in the table (no price, no guess).
+    """
+    prices = OPENROUTER_PRICES_USD_PER_MTOK.get(model)
+    if prices is None:
+        return None
+    tokens_in = -(-max(prompt_chars, 0) // CHARS_PER_TOKEN)  # ceiling
+    return (tokens_in * prices[0] + ESTIMATED_OUTPUT_TOKENS * prices[1]) / _PER_MILLION

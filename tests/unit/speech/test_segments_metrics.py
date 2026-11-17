@@ -2,8 +2,9 @@
 
 import pytest
 
-from aicoach.speech.metrics import coverage, normalize_words
+from aicoach.speech.metrics import Gap, coverage, normalize_words, time_gaps
 from aicoach.speech.segments import (
+    Segment,
     TimedWord,
     build_segments,
     guess_language,
@@ -100,3 +101,55 @@ def test_coverage_distinguishes_kazakh_letters_and_handles_empty_input() -> None
     empty = coverage([], "что угодно")
     assert (empty.total, empty.share) == (0, None)
     assert coverage(["слово"], "").missing == ("слово",)
+
+
+def _seg(start: float, end: float) -> Segment:
+    return Segment(
+        t_v_start=100 + start,
+        t_v_end=100 + end,
+        start_s=start,
+        end_s=end,
+        speaker=None,
+        language="ru",
+        text="x",
+    )
+
+
+@pytest.mark.unit
+def test_time_gaps_finds_speech_that_stops_before_the_fragment_ends() -> None:
+    # The cut-off of fragment 3 in D-066: speech until 30 s of 65.
+    gaps = time_gaps([_seg(0, 12), _seg(13, 30)], 65.0)
+
+    assert gaps == [Gap(30.0, 65.0)]
+    assert gaps[0].length_s == 35.0
+
+
+@pytest.mark.unit
+def test_time_gaps_finds_a_gap_in_the_middle_and_one_at_the_start() -> None:
+    gaps = time_gaps([_seg(20, 30), _seg(50, 60)], 60.0)
+
+    assert gaps == [Gap(0.0, 20.0), Gap(30.0, 50.0)]
+
+
+@pytest.mark.unit
+def test_time_gaps_ignores_pauses_shorter_than_the_limit_and_overlaps() -> None:
+    segments = [_seg(0, 20), _seg(5, 10), _seg(34.9, 60)]  # a 14.9 s pause
+
+    assert time_gaps(segments, 60.0) == []
+
+
+@pytest.mark.unit
+def test_time_gaps_limit_is_inclusive() -> None:
+    assert time_gaps([_seg(0, 10), _seg(25, 40)], 40.0) == [Gap(10.0, 25.0)]
+
+
+@pytest.mark.unit
+def test_time_gaps_without_segments_is_one_gap_over_the_fragment() -> None:
+    assert time_gaps([], 90.0) == [Gap(0.0, 90.0)]
+    assert time_gaps([], 10.0) == []  # a fragment shorter than the limit has no gap
+    assert time_gaps([], 0.0) == []
+
+
+@pytest.mark.unit
+def test_time_gaps_sorts_unordered_segments() -> None:
+    assert time_gaps([_seg(40, 60), _seg(0, 20)], 60.0) == [Gap(20.0, 40.0)]

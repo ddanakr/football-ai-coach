@@ -10,10 +10,10 @@ import pytest
 from aicoach.agent.context import MatchContext
 from aicoach.agent.journal import JOURNAL_FILE
 from aicoach.agent.loop import Agent, load_system_prompt
-from aicoach.agent.messages import ModelTurn, ToolResults, Usage, UserMessage
+from aicoach.agent.messages import ModelTurn, ToolCall, ToolResults, Usage, UserMessage
 from aicoach.agent.render import EventRef
 from aicoach.agent.tools import ToolBox
-from aicoach.errors import ExternalServiceError
+from aicoach.errors import BudgetExceededError, ExternalServiceError
 from aicoach.i18n import ru
 from tests.fixtures.agent_synth import FakeLLM, make_context, turn
 
@@ -364,3 +364,36 @@ def test_a_number_from_the_arguments_of_a_call_may_be_stated() -> None:
     answer = agent(llm).ask("Фолы во втором тайме?", ToolBox(make_context()))
 
     assert answer.outcome == "first_try"
+
+
+@pytest.mark.unit
+def test_budget_error_is_raised_and_journaled_as_an_error(tmp_path: Path) -> None:
+    llm = FakeLLM([turn("", GOALS), BudgetExceededError("Бюджет месяца исчерпан")])
+
+    with pytest.raises(BudgetExceededError, match="Бюджет"):
+        agent(llm, tmp_path).ask("?", ToolBox(make_context()))
+
+    (line,) = (tmp_path / JOURNAL_FILE).read_text(encoding="utf-8").splitlines()
+    assert json.loads(line)["validator"] == "error"
+
+
+@pytest.mark.unit
+def test_the_cost_the_service_reported_beats_the_price_table() -> None:
+    reported = ModelTurn("Не знаю.", (), Usage(100, 10, 0.00777))
+    llm = FakeLLM([reported], model="google/gemini-3.5-flash-lite")
+
+    answer = agent(llm).ask("?", ToolBox(make_context()))
+
+    assert answer.cost_usd == 0.00777
+
+
+@pytest.mark.unit
+def test_the_reported_cost_adds_up_over_the_requests_of_one_question() -> None:
+    first = ModelTurn("", (ToolCall("query_events", {"type": "goal"}),), Usage(10, 1, 0.001))
+    second = ModelTurn("Не знаю.", (), Usage(20, 2, 0.002))
+
+    answer = agent(FakeLLM([first, second], model="vendor/unknown")).ask(
+        "?", ToolBox(make_context())
+    )
+
+    assert answer.cost_usd == pytest.approx(0.003)

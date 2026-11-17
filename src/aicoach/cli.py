@@ -15,7 +15,7 @@ from typing import TypeVar
 from pydantic import ValidationError
 
 from aicoach.agent.evaluation import ANSWERS_FILE, format_summary, read_questions, run_questions
-from aicoach.agent.service import build_runtime, gemini_client
+from aicoach.agent.service import build_runtime, make_llm
 from aicoach.clips import DEFAULT_AFTER_S, DEFAULT_BEFORE_S, export_event_clip
 from aicoach.config import load_settings
 from aicoach.errors import AicoachError, ConfigError
@@ -47,7 +47,7 @@ from aicoach.speech.run import (
 )
 from aicoach.speech.run import format_summary as format_speech_summary
 from aicoach.speech.run import format_transcript, lineup_terms, run_speech_test
-from aicoach.speech.transcriber import GeminiTranscriber
+from aicoach.speech.service import make_transcriber
 from aicoach.spotting.convert import DEFAULT_FPS, DEFAULT_MERGE_RADIUS_S
 from aicoach.spotting.evaluation import DEFAULT_THRESHOLDS, DEVELOPMENT_HALF, format_evaluation
 from aicoach.spotting.run import DEFAULT_GROUND_TRUTH, run_spotting_eval
@@ -164,7 +164,11 @@ def build_parser() -> argparse.ArgumentParser:
     agent_eval.add_argument(
         "--db", type=Path, help="database file (default: aicoach.db by the video)"
     )
-    agent_eval.add_argument("--model", help="Gemini model (default: GEMINI_MODEL, then config.py)")
+    _add_provider_options(
+        agent_eval,
+        "default: GEMINI_MODEL, then config.py (gemini); the Flash-lite slug of config.py "
+        "(openrouter)",
+    )
     agent_eval.add_argument(
         "--output", type=Path, help=f"default: {ANSWERS_FILE} by the video (grade column empty)"
     )
@@ -178,8 +182,14 @@ def build_parser() -> argparse.ArgumentParser:
     speech.add_argument(
         "--lineups", type=Path, help=f"default: {LINEUP_FILE} by the video, if it exists"
     )
+    _add_provider_options(
+        speech,
+        "default: GEMINI_TRANSCRIBE_MODEL (gemini); google/gemini-3.5-transcribe (openrouter)",
+    )
     speech.add_argument(
-        "--model", help="transcription model (default: GEMINI_TRANSCRIBE_MODEL, then config.py)"
+        "--no-vocabulary",
+        action="store_true",
+        help="skip the extra vocabulary run (it needs lineups.csv and costs another request)",
     )
     speech.add_argument(
         "--output", type=Path, help=f"default: {SPEECH_OUTPUT_DIR}/ by the video (outside git)"
@@ -259,6 +269,17 @@ def _add_fuse_options(
         action="store_true",
         help="allow a new run although the match has user edits (they leave the current view)",
     )
+
+
+def _add_provider_options(parser: argparse.ArgumentParser, model_help: str) -> None:
+    """`--provider` and `--model`, shared by the commands that call a paid model (D-068)."""
+    parser.add_argument(
+        "--provider",
+        choices=("openrouter", "gemini"),
+        help="openrouter (paid, the default) or gemini (direct, free tier); default: "
+        "AICOACH_LLM_PROVIDER",
+    )
+    parser.add_argument("--model", help=f"model of the provider ({model_help})")
 
 
 def _match_id(args: argparse.Namespace) -> str:
@@ -490,10 +511,11 @@ def _ui(args: argparse.Namespace) -> int:
 def _agent_eval(args: argparse.Namespace) -> int:
     """Ask every question, write answers.csv, print the validator summary."""
     questions = read_questions(args.questions)
-    settings = load_settings(gemini_model=args.model)
+    settings = load_settings(llm_provider=args.provider)
     match_dir = args.video.parent
+    llm = make_llm(settings, match_dir, args.model)
     runtime = build_runtime(
-        gemini_client(settings),
+        llm,
         args.db or match_dir / DB_FILE,
         _match_id(args),
         match_dir,
@@ -502,7 +524,8 @@ def _agent_eval(args: argparse.Namespace) -> int:
     output = args.output or match_dir / ANSWERS_FILE
     summary = run_questions(runtime.agent, questions, runtime.box_factory, output)
     sys.stdout.write(
-        f"model: {settings.gemini_model}\nanswers: {output}\n{format_summary(summary)}"
+        f"provider: {settings.aicoach_llm_provider}\nmodel: {llm.model}\nanswers: {output}\n"
+        f"{format_summary(summary)}"
     )
     return 0
 
@@ -511,13 +534,19 @@ def _speech_test(args: argparse.Namespace) -> int:
     """Transcribe the check-file fragments, print the summary and the full transcripts."""
     match_dir = args.video.parent
     fragments = load_check_file(args.check_file or match_dir / CHECK_FILE)
-    settings = load_settings()
-    model = args.model or settings.gemini_transcribe_model
-    transcriber = GeminiTranscriber(settings.require_gemini_api_key(), model)
-    terms = lineup_terms(args.lineups or match_dir / LINEUP_FILE, required=args.lineups is not None)
+    settings = load_settings(llm_provider=args.provider)
+    transcriber = make_transcriber(settings, match_dir, args.model)
+    terms = None
+    if not args.no_vocabulary:
+        terms = lineup_terms(
+            args.lineups or match_dir / LINEUP_FILE, required=args.lineups is not None
+        )
     out_dir = args.output or match_dir / SPEECH_OUTPUT_DIR
     runs = run_speech_test(args.video, fragments, out_dir, transcriber, vocabulary=terms)
-    sys.stdout.write(f"model: {model}\nfiles: {out_dir}\n{format_speech_summary(runs)}\n")
+    sys.stdout.write(
+        f"provider: {settings.aicoach_llm_provider}\nmodel: {transcriber.model}\n"
+        f"files: {out_dir}\n{format_speech_summary(runs)}\n"
+    )
     sys.stdout.write("\n".join(format_transcript(r) for r in runs))
     return 0
 

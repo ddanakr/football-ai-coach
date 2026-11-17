@@ -8,7 +8,7 @@ from pathlib import Path
 import streamlit as st
 
 from aicoach.agent.loop import AgentAnswer
-from aicoach.agent.service import AgentRuntime, build_runtime, gemini_client
+from aicoach.agent.service import AgentRuntime, build_runtime, make_llm
 from aicoach.config import load_settings
 from aicoach.errors import AicoachError
 from aicoach.i18n import ru
@@ -41,7 +41,7 @@ def _runtime(args: AppArgs) -> AgentRuntime:
     """The agent of the open match; built once per match and kept in the session.
 
     Raises:
-        ConfigError: No Gemini key is set.
+        ConfigError: No key is set for the chosen provider.
         StorageError: The database does not exist.
     """
     identity = (args.db, args.match_id, args.video)
@@ -51,7 +51,7 @@ def _runtime(args: AppArgs) -> AgentRuntime:
         return runtime
     st.session_state[HISTORY_KEY] = []  # another match: the old questions do not belong to it
     runtime = build_runtime(
-        gemini_client(load_settings()),
+        make_llm(load_settings(), args.results_dir),
         args.db,
         args.match_id,
         args.results_dir,
