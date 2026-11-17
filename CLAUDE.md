@@ -64,12 +64,13 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 ├── configs/            # план: пороги, окна NMS, лексиконы, шаблоны плашек (yaml); пока пороги лежат в pydantic-моделях стадий (D-031)
 ├── docs/               # TZ.md; протокол разметки
 ├── src/aicoach/
-│   ├── cli.py          # точка входа: python -m aicoach.cli <команда>; команды: scoreboard, scoreboard-calibrate, plates, plate-names, spotting-eval, fuse, run, ingest, ui, clip
+│   ├── cli.py          # точка входа: python -m aicoach.cli <команда>; команды: scoreboard, scoreboard-calibrate, plates, plate-names, transcribe, spotting-eval, fuse, run, ingest, ui, clip
 │   ├── pipeline.py     # команда `run`: scoreboard, plates, fusion по порядку, статус `run` в status.json; модели в ней нет
 │   ├── status.py       # status.json каталога матча: состояние стадий (running, done, failed) и прогресс
 │   ├── stage_common.py # общие помощники стадий: атомарная запись, статус, прогресс, запись сбоя
 │   ├── clips.py        # команда `clip`: экспорт клипа FFmpeg (D-056): окно `clip_window`, время из events_current, перекодирование H.264/AAC, `clips/` рядом с видео, готовый файл не режется заново
 │   ├── errors.py       # иерархия исключений
+│   ├── namematch.py    # общее сопоставление имён (D-070) для плашек, речи и агента: свёртка (регистр, ё, казахские буквы, латинские двойники), `find_player` (целое имя против состава, с `aliases`), `find_mentions` (слова текста против фамилий и прозвищ), `same_word`, `name_matches`; результат ссылка на игрока (сторона, номер, написание состава) и исходное слово
 │   ├── logging_setup.py  # structlog, JSON-строки в stderr
 │   ├── openrouter.py   # общий HTTP-доступ к OpenRouter: ключ в заголовке, повторы на 429 и 5xx, `OpenRouterError`, разбор стоимости и счётчиков (D-068)
 │   ├── spend.py        # журнал трат `spend_ledger.jsonl` и месячный бюджет `AICOACH_BUDGET_USD`; обёртки `MeteredLLM` и `MeteredTranscriber` (D-067)
@@ -93,7 +94,7 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 │   ├── plate_names/    # стадия фамилий с плашек (D-059): Tesseract kaz+rus по вырезкам `plate_crops/`, необязательная сверка с составом `lineups.csv`; Tesseract внешняя программа, без неё шаг пропускается
 │   │   ├── stage.py        # запуск стадии, кэш по ключу, plate_names.json, статусы `done` и `skipped`; в predictions и edits не пишет
 │   │   ├── reader.py  layout.py   # подготовка строки и вызов Tesseract (`NameReader`); положение строк текста в вырезке долями вырезки
-│   │   ├── text.py  lineup.py  assemble.py   # ключ имени и чистка текста; загрузчик состава и поиск игрока своей стороны; чистая сборка имён плашки
+│   │   ├── text.py  lineup.py  assemble.py   # чистка текста плашки; загрузчик состава (`Player` с прозвищами из колонки `aliases`); чистая сборка имён плашки (сопоставление в `aicoach/namematch.py`)
 │   │   └── schemas.py      # pydantic-модели plate_names.json и параметры стадии
 │   ├── storage/        # SQLite-хранилище событий: db.py, schema.py, models.py, repository.py (миграций нет, версия схемы 1)
 │   ├── eval/           # сопоставление, метрики, bootstrap, схемы входа, отчёт в Markdown
@@ -113,23 +114,27 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 │   │   ├── download.py     # `Downloader` (`Protocol`) и yt-dlp: видео не выше 720p плюс звук, склейка в `src.mp4`, докачка `.part`
 │   │   ├── media.py        # проверка кадра 1280×720 и `audio.wav` 16 кГц моно через FFmpeg
 │   │   ├── lock.py         # `ingest.lock` с pid: один ingest на каталог матча, замок умершего процесса снимается
-│   │   └── stage.py        # `run_ingest`: каталог матча, образцы табло, шаги со статусами в `status.json`, ожидание T-DEED, слияние
-│   ├── speech/         # тест расшифровки речи (D-066, D-068), стадии на весь матч пока нет
+│   │   └── stage.py        # `run_ingest`: каталог матча, образцы табло, шаги со статусами в `status.json` (включая `plate_names` и `transcribe`), ожидание T-DEED, слияние
+│   ├── speech/         # расшифровка речи: стадия на весь матч (D-070) и тест на фрагментах (D-066, D-068)
+│   │   ├── stage.py        # стадия `transcribe`: звук (`audio.wav`, иначе `src.mp4`) кусками по 180 с с перекрытием 10 с, ответ каждого куска в `speech_chunks/` (кэш, продолжение после сбоя), `transcript.json`, статус `skipped` без ключа
+│   │   ├── chunks.py       # чистые: план кусков, склейка без дублей по середине перекрытия, согласование меток говорящих
+│   │   ├── transcript.py   # модели `transcript.json` (сегменты `s:N` с таймом, говорящим, языком, найденными игроками; дыры по таймам; стоимость), чистая сборка сегментов и дыр
 │   │   ├── transcriber.py  # `Transcriber` (Protocol), `RawTranscript` и `GeminiTranscriber` (прямой Gemini)
 │   │   ├── openrouter_stt.py  # `OpenRouterTranscriber`: scribe-v2 и gemini-3.5-transcribe через OpenRouter (D-068)
 │   │   ├── service.py      # `make_transcriber`: поставщик из настроек, обёртка журналом трат
 │   │   ├── pricing.py      # цены расшифровки за секунду звука с источником (оценка до запроса)
 │   │   └── audio.py  check_file.py  segments.py  metrics.py  run.py   # нарезка звука, файл проверки слушателя, реплики с `t_v`, доля найденных слов и `time_gaps`, команда `speech-test`
 │   ├── agent/          # LLM-агент на Gemini (FR-8, D-061): инструменты над events_current, в ответе ссылки [E:id] вместо таймкодов, проверка ответа
-│   │   ├── context.py      # `MatchContext`: события, игровая минута по табло, имена с плашек, состав; `load_context`
-│   │   ├── tools.py        # `ToolBox`: match_info, query_events, get_event, find_player, make_clip; помнит выданные id, имена и числа
-│   │   ├── validator.py    # проверка ответа: ссылки, время, адреса, имена, числа цифрами
-│   │   ├── render.py       # ссылки [E:id] → метка (тип, тайм, минута, время видео) и ссылка YouTube
+│   │   ├── context.py      # `MatchContext`: события, игровая минута по табло, имена с плашек, состав, сегменты комментария (`transcript.json`); `load_context`
+│   │   ├── tools.py        # `ToolBox`: match_info, query_events, get_event, find_player, get_transcript, search_transcript, make_clip; помнит выданные id, имена и числа
+│   │   ├── transcript_tools.py  # чистые функции инструментов комментария: окно вокруг события, игровые минуты, поиск по слову, фамилии и прозвищу; сегмент для модели без времени видео (D-070)
+│   │   ├── validator.py    # проверка ответа: ссылки `[E:p:N]`, `[E:e:N]` и `[E:s:N]` (сегмент комментария), время, адреса, имена, числа цифрами
+│   │   ├── render.py       # ссылки [E:id] → метка (тип, тайм, минута, время видео; 🎙 для комментария) и ссылка YouTube
 │   │   ├── llm.py          # `LLMClient` (Protocol) и два клиента: `GeminiClient` (google-genai, повторы на 429 и 5xx) и `OpenRouterClient` в `openrouter_llm.py` (D-068)
 │   │   ├── openrouter_llm.py  # `OpenRouterClient`: чат OpenRouter в формате OpenAI, вызов инструментов, стоимость из ответа
 │   │   ├── loop.py         # `Agent`: цикл вызовов (до 6 на вопрос), одна повторная попытка, отказ; системный промпт в `system_prompt.md`
 │   │   ├── evaluation.py   # команда `agent-eval`: вопросы CSV → `answers.csv`, сводка проверки
-│   │   └── service.py  names.py  messages.py  journal.py  pricing.py   # сборка агента для матча и `make_llm` (поставщик из настроек `AICOACH_LLM_PROVIDER`, обёртка журналом трат); сравнение имён; сообщения; журнал `agent_log.jsonl`; цены с источником
+│   │   └── service.py  messages.py  journal.py  pricing.py   # сборка агента для матча и `make_llm` (поставщик из настроек `AICOACH_LLM_PROVIDER`, обёртка журналом трат); сообщения; журнал `agent_log.jsonl`; цены с источником
 │   └── ui/             # просмотр событий, ручные правки и экспорт клипа (Streamlit, D-054, D-055, D-056)
 │       ├── app.py          # тонкий скрипт Streamlit (D-062): сверху плеер st.video слева и панель «Агент» справа (колонки 3 : 2), под ними таблица событий с выбором строки на всю ширину, фильтры и экспорт клипа в боковой панели
 │       ├── logic.py        # чистые функции: фильтры, mm:ss, подписи, youtube_link, строки таблицы, выбор строки → событие

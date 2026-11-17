@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from aicoach.namematch import DEFAULT_MIN_SIMILARITY
 from aicoach.plate_names.layout import NameLayout
 from aicoach.plates.schemas import PlateType, Team
 
@@ -31,7 +32,7 @@ class PlateNamesConfig(_Frozen):
 
     scale: int = Field(default=3, ge=1, le=8)
     pad_px: int = Field(default=20, ge=0, le=100)
-    min_similarity: float = Field(default=0.88, gt=0, le=1)
+    min_similarity: float = Field(default=DEFAULT_MIN_SIMILARITY, gt=0, le=1)
     layout: NameLayout = NameLayout()
 
 

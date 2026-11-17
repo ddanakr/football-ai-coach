@@ -1,9 +1,10 @@
 """Synthetic match, scripted language model for the agent tests. Names are invented."""
 
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any
 
-from aicoach.agent.context import EventFacts, MatchContext, minute_text
+from aicoach.agent.context import EventFacts, MatchContext, SegmentFacts, minute_text
 from aicoach.agent.messages import (
     HistoryItem,
     ModelTurn,
@@ -14,6 +15,7 @@ from aicoach.agent.messages import (
 from aicoach.domain.events import EventType
 from aicoach.plate_names.lineup import Player
 from aicoach.plate_names.schemas import PlayerRead
+from aicoach.speech.transcript import Mention, TranscriptSegment
 from aicoach.storage import CurrentEvent
 
 MATCH_ID = "m1"
@@ -139,3 +141,56 @@ class FakeLLM:
         if isinstance(step, Exception):
             raise step
         return step
+
+
+ALIASED = Player("away", "Образцов Марат", 7, aliases=("Образец",))
+
+
+def make_segment(
+    number: int,
+    t_start: float,
+    text: str,
+    half: int | None,
+    minute: int | None,
+    players: Sequence[Player] = (),
+    *,
+    speaker: str = "s0",
+    language: str = "ru",
+) -> SegmentFacts:
+    """One stretch of commentary (5 s long) with its game minute."""
+    mentions = [
+        Mention(
+            name=p.name,
+            word=p.name.split()[0],
+            side=p.side,
+            number=p.number,
+            via="name",
+            similarity=1.0,
+        )
+        for p in players
+    ]
+    segment = TranscriptSegment(
+        id=f"s:{number}",
+        t_start=t_start,
+        t_end=t_start + 5.0,
+        half=half,  # type: ignore[arg-type]
+        speaker=speaker,
+        language=language,
+        text=text,
+        players=mentions,
+    )
+    return SegmentFacts(segment, minute, minute_text(minute, half))
+
+
+def make_commentary_context() -> MatchContext:
+    """The synthetic match with commentary around its first goal, a corner and a 2nd-half line."""
+    base = make_context()
+    segments = (
+        make_segment(0, 1480.0, "Тестов выходит один на один", 1, 24, [TESTOV]),
+        make_segment(1, 1502.0, "Гол! Тестов забивает, какой удар", 1, 25, [TESTOV]),
+        make_segment(2, 1900.0, "Угловой у гостей, подача", 1, 31),
+        make_segment(3, 5000.0, "Образец отдал пас на фланг", 2, 64, [ALIASED], speaker="s1"),
+        make_segment(4, 6500.0, "Ұзақ соққы", 2, None, language="kk"),  # no clock there
+    )
+    lineup = (TESTOV, PROBNY, ALIASED, NURLANOV)
+    return replace(base, segments=segments, lineup=lineup)

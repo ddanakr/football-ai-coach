@@ -226,7 +226,7 @@ class Agent:
         return find_violations(
             text,
             seen_ids=box.seen_event_ids,
-            existing_ids=set(box.ctx.by_id()),
+            existing_ids=box.ctx.ref_ids(),
             allowed_names=[*box.allowed_names, question],
             allowed_numbers=box.seen_numbers | numbers_in(question),
         )

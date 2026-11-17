@@ -1,13 +1,14 @@
 """The facts of one match as the agent tools see them (read-only snapshot).
 
 Built from `events_current` (user edits applied), `scoreboard.json` (game minutes),
-`candidates.json` with `plate_names.json` (names of players) and the optional `lineups.csv`
-(team names, players). Every file except the database is optional: what is missing only makes
+`candidates.json` with `plate_names.json` (names of players), the optional `lineups.csv`
+(team names, players) and the optional `transcript.json` (commentary, D-070). Every file except
+the database is optional: what is missing only makes
 the matching fields empty (`None`), it never stops the agent.
 """
 
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -27,6 +28,8 @@ from aicoach.scoreboard.config import ScoreboardConfig
 from aicoach.scoreboard.mapping import clock_at
 from aicoach.scoreboard.schemas import OffsetSegment, ScoreboardResult
 from aicoach.scoreboard.stage import RESULT_FILE as SCOREBOARD_FILE
+from aicoach.speech.transcript import RESULT_FILE as TRANSCRIPT_FILE
+from aicoach.speech.transcript import TranscriptResult, TranscriptSegment
 from aicoach.storage import CurrentEvent, connect, get_current_events
 from aicoach.ui.data import load_time_bounds
 from aicoach.ui.edits import with_derived_half
@@ -61,6 +64,16 @@ class EventFacts:
 
 
 @dataclass(frozen=True)
+class SegmentFacts:
+    """One stretch of the commentary with the game minute at its start (None where the clock is
+    unknown). The video time stays in `segment.t_start`, shown by the interface only."""
+
+    segment: TranscriptSegment
+    minute: int | None
+    minute_text: str | None
+
+
+@dataclass(frozen=True)
 class MatchContext:
     """Everything the tools read; build it with `load_context` or by hand in tests."""
 
@@ -70,10 +83,19 @@ class MatchContext:
     has_lineup: bool = False
     lineup: tuple[Player, ...] = ()
     half_minutes: Mapping[int, tuple[int | None, int | None]] = field(default_factory=dict)
+    segments: tuple[SegmentFacts, ...] = ()
 
     def by_id(self) -> dict[str, EventFacts]:
         """The events by `event_id`."""
         return {facts.event.event_id: facts for facts in self.events}
+
+    def segment_by_id(self) -> dict[str, SegmentFacts]:
+        """The commentary segments by id (`s:<n>`)."""
+        return {facts.segment.id: facts for facts in self.segments}
+
+    def ref_ids(self) -> set[str]:
+        """Every id an answer may link to: the events and the commentary segments."""
+        return set(self.by_id()) | set(self.segment_by_id())
 
 
 def game_minute(clock_s: float | None) -> int | None:
@@ -185,6 +207,36 @@ def _players_by_event(match_dir: Path) -> dict[PlayerKey, tuple[PlayerRead, ...]
         return {}
 
 
+@lru_cache(maxsize=2)
+def _read_transcript(path: Path, stamp: int) -> TranscriptResult:  # noqa: ARG001
+    """`transcript.json`; `stamp` (modification time) only keys the cache."""
+    return TranscriptResult.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def _commentary(match_dir: Path) -> TranscriptResult | None:
+    path = match_dir / TRANSCRIPT_FILE
+    try:
+        return _read_transcript(path, path.stat().st_mtime_ns)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as err:
+        logger.warning("agent_no_transcript", stage="agent", reason=type(err).__name__)
+        return None
+
+
+def build_segment_facts(
+    segments: Sequence[TranscriptSegment],
+    clock: tuple[OffsetSegment, ...],
+    max_extrapolation_s: float,
+) -> tuple[SegmentFacts, ...]:
+    """Attach the game minute at the start of each segment (pure)."""
+    facts: list[SegmentFacts] = []
+    for seg in segments:
+        minute = game_minute(clock_at(clock, seg.t_start, max_extrapolation_s))
+        facts.append(SegmentFacts(seg, minute, minute_text(minute, seg.half)))
+    return tuple(facts)
+
+
 def _lineup(match_dir: Path) -> tuple[tuple[Player, ...], dict[str, str]]:
     """The lineup players and team names; empty when there is no (valid) `lineups.csv`."""
     path = match_dir / LINEUP_FILE
@@ -262,6 +314,7 @@ def load_context(db_path: Path, match_id: str, match_dir: Path) -> MatchContext:
         _cards_by_event(match_dir),
     )
     lineup, team_names = _lineup(match_dir)
+    transcript = _commentary(match_dir)
     return MatchContext(
         match_id=match_id,
         events=facts,
@@ -269,4 +322,9 @@ def load_context(db_path: Path, match_id: str, match_dir: Path) -> MatchContext:
         has_lineup=bool(lineup),
         lineup=lineup,
         half_minutes=_half_minutes(segments, max_extrapolation_s, match_dir),
+        segments=(
+            ()
+            if transcript is None
+            else build_segment_facts(transcript.segments, segments, max_extrapolation_s)
+        ),
     )

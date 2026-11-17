@@ -182,6 +182,7 @@ INGEST_STEP_LABELS: dict[str, str] = {
     "scoreboard": "Табло",
     "plates": "Плашки",
     "plate_names": "Фамилии с плашек",
+    "transcribe": "Расшифровка комментария",
     "tdeed": "Файл T-DEED",
     "fuse": "Слияние в базу",
 }
@@ -208,6 +209,11 @@ PLATE_NAMES_SKIPPED = (
     "Фамилии с плашек не прочитаны: {reason}. Установите Tesseract с языками kaz и rus "
     "и запустите обработку ещё раз; остальные стадии это не затрагивает."
 )
+MISSING_SPEECH_KEY = "нет ключа поставщика {provider} (см. .env.example)"
+TRANSCRIBE_SKIPPED = (
+    "Комментарий не расшифрован: {reason}. Впишите ключ OpenRouter в .env и запустите "
+    "обработку ещё раз; остальные стадии это не затрагивает."
+)
 
 
 # The agent (FR-8): answers, refusal and the "Agent" tab.
@@ -222,6 +228,8 @@ EVENT_ICONS: dict[EventType, str] = {
     EventType.SUBST: "🔄",
 }
 CARD_ICONS: dict[str, str] = {"yellow": "🟨", "red": "🟥"}
+# A link to a stretch of the commentary (D-070).
+SEGMENT_ICON = "🎙"
 AGENT_TAB = "Агент"
 AGENT_HINT = (
     "Вопросы о событиях матча: голы, удары, угловые, фолы, замены. Ответы строятся только по "

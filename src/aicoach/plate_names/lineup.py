@@ -1,20 +1,19 @@
-"""The lineup of the match (`lineups.csv`, optional): who plays for which side, and the search of
-a read name among the players of one side.
+"""The lineup of the match (`lineups.csv`, optional): who plays for which side.
 
-Columns: team, side, number, name, position, started, minute_on, minute_off (only `side` and
-`name` are needed here). The file may be saved by a spreadsheet: BOM, spaces around cells and
-`;` as the separator are accepted.
+Columns: team, side, number, name, position, started, minute_on, minute_off, aliases (only `side`
+and `name` are needed here). `aliases` holds nicknames separated by `;` ("Шеф;Дон"); in a file
+that itself uses `;` as the separator the cell must be quoted. The file may be saved by a
+spreadsheet: BOM, spaces around cells and `;` as the separator are accepted. Matching names to
+the players is `aicoach.namematch`.
 """
 
 import csv
 import io
 from dataclasses import dataclass
-from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Literal
 
 from aicoach.errors import PlatesError
-from aicoach.plate_names.text import sorted_key
 
 LINEUP_FILE = "lineups.csv"
 Side = Literal["home", "away"]
@@ -25,25 +24,25 @@ _MAX_NUMBER_DIGITS = 3
 
 @dataclass(frozen=True)
 class Player:
-    """One line of the lineup. `number` is None when the cell is empty or not a number."""
+    """One line of the lineup. `number` is None when the cell is empty or not a number;
+    `aliases` are the nicknames of the player."""
 
     side: Side
     name: str
     number: int | None = None
-
-
-@dataclass(frozen=True)
-class LineupMatch:
-    """The player a read name was matched to and how alike the two texts are (0..1)."""
-
-    player: Player
-    similarity: float
+    aliases: tuple[str, ...] = ()
 
 
 def _delimiter(text: str) -> str:
     """`;` when the header line has more of them than commas (Russian spreadsheets)."""
     header = text.splitlines()[0] if text.strip() else ""
     return ";" if header.count(";") > header.count(",") else ","
+
+
+def _aliases(cell: str) -> tuple[str, ...]:
+    """The nicknames of the `aliases` cell: separated by `;`, blanks dropped, no repeats."""
+    found = (" ".join(part.split()) for part in cell.split(";"))
+    return tuple(dict.fromkeys(a for a in found if a))
 
 
 def _number(cell: str) -> int | None:
@@ -109,6 +108,7 @@ def _player(row: list[str], column: dict[str, int], line: int) -> Player:
         side="home" if side == "home" else "away",
         name=name,
         number=_number(_cell(row, column, "number")),
+        aliases=_aliases(_cell(row, column, "aliases")),
     )
 
 
@@ -124,38 +124,6 @@ def load_lineup(path: Path) -> list[Player]:
         msg = f"cannot read {path}: {type(err).__name__}"
         raise PlatesError(msg) from err
     return parse_lineup(data)
-
-
-def similarity(read: str, candidate: str) -> float:
-    """How alike two names are, 0..1; the order of the words does not matter."""
-    a, b = sorted_key(read), sorted_key(candidate)
-    if not a or not b:
-        return 0.0
-    return SequenceMatcher(None, a, b, autojunk=False).ratio()
-
-
-def find_player(
-    read: str, players: list[Player], side: Side, min_similarity: float
-) -> tuple[LineupMatch | None, float | None]:
-    """The player of `side` whose name is most like `read`.
-
-    Returns the match (None when the best similarity is below `min_similarity`, when two
-    different players tie for the best place, or when `side` has no players) and the best
-    similarity seen (None when nothing was compared). Players of the other side are never
-    considered. Nothing is guessed: a doubtful text stays unrecognized.
-    """
-    scored = sorted(
-        ((similarity(read, p.name), p) for p in players if p.side == side),
-        key=lambda item: -item[0],
-    )
-    if not scored:
-        return None, None
-    best_score, best = scored[0]
-    if best_score < min_similarity:
-        return None, best_score
-    if len(scored) > 1 and scored[1][0] == best_score and scored[1][1].name != best.name:
-        return None, best_score
-    return LineupMatch(best, best_score), best_score
 
 
 def parse_team_names(data: bytes) -> dict[Side, str]:

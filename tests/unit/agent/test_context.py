@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
@@ -256,3 +257,80 @@ def test_a_foul_moved_or_added_by_the_user_has_no_card() -> None:
     facts = build_facts([moved, added, kept], SEGMENTS, {}, 30.0, card)
 
     assert [f.card for f in facts] == [None, None, "yellow"]
+
+
+def _write_transcript(
+    match_dir: Path, *, t_start: float = 210.0, half: Literal[1, 2] | None = 1
+) -> None:
+    from aicoach.speech.transcript import (
+        TranscribeConfig,
+        TranscriptResult,
+        TranscriptSegment,
+        TranscriptStats,
+    )
+
+    segment = TranscriptSegment(
+        id="s:0", t_start=t_start, t_end=t_start + 4, half=half, language="ru", text="Вот это гол"
+    )
+    result = TranscriptResult(
+        cache_key="k",
+        model="fake/stt",
+        source="audio.wav",
+        duration_s=3000.0,
+        config=TranscribeConfig(),
+        lineup=None,
+        lineup_version=None,
+        chunks=[],
+        segments=[segment],
+        gaps=[],
+        halves=[],
+        stats=TranscriptStats(
+            n_segments=1, n_words=3, n_mentions=0, n_chunks=0, cost_usd=None, speakers_unresolved=0
+        ),
+    )
+    (match_dir / "transcript.json").write_text(result.model_dump_json(), encoding="utf-8")
+
+
+@pytest.mark.unit
+def test_load_context_reads_the_commentary_with_the_game_minute(tmp_path: Path) -> None:
+    db = write_match_dir(tmp_path, "m1")
+    _write_transcript(tmp_path)
+
+    ctx = load_context(db, "m1", tmp_path)
+
+    (facts,) = ctx.segments
+    assert facts.segment.id == "s:0"
+    assert facts.minute is not None
+    assert facts.minute_text
+    assert set(ctx.segment_by_id()) == {"s:0"}
+    assert {"s:0", "p:1"} <= {*ctx.ref_ids(), "p:1"}  # events and segments share the id space
+
+
+@pytest.mark.unit
+def test_load_context_segment_without_a_clock_has_no_minute(tmp_path: Path) -> None:
+    db = write_match_dir(tmp_path, "m1")
+    _write_transcript(tmp_path, t_start=2900.0, half=None)
+
+    (facts,) = load_context(db, "m1", tmp_path).segments
+
+    assert facts.minute is None
+    assert facts.minute_text is None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("content", ["{ not json", '{"schema_version": 1}', ""])
+def test_load_context_survives_a_broken_transcript_file(tmp_path: Path, content: str) -> None:
+    db = write_match_dir(tmp_path, "m1")
+    (tmp_path / "transcript.json").write_text(content, encoding="utf-8")
+
+    ctx = load_context(db, "m1", tmp_path)
+
+    assert ctx.segments == ()
+    assert len(ctx.events) == 3
+
+
+@pytest.mark.unit
+def test_load_context_without_a_transcript_has_no_segments(tmp_path: Path) -> None:
+    db = write_match_dir(tmp_path, "m1")
+
+    assert load_context(db, "m1", tmp_path).segments == ()

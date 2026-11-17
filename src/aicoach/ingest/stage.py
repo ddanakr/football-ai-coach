@@ -2,7 +2,8 @@
 
 Steps, each with its own entry in `status.json` of the match directory: `download` (yt-dlp,
 frame size check), `audio` (16 kHz mono WAV), `scoreboard`, `plates`, `plate_names` (player names
-read from the plate crops, skipped when Tesseract is missing), `tdeed` (the model output
+read from the plate crops, skipped when Tesseract is missing), `transcribe` (the commentary of
+the whole match, skipped without a key of the provider), `tdeed` (the model output
 brought from the notebook) and `fuse`. The `ingest` entry tells the whole state. Every step
 skips what is ready, so a repeated ingest continues where the last one stopped. Without the
 T-DEED file the command stops with the `tdeed` step `waiting` (D-058).
@@ -33,7 +34,16 @@ from aicoach.spotting.schemas import load_tdeed_file
 from aicoach.stage_common import Logger, Progress, elapsed_ms, record_failure, set_status
 
 STAGE = "ingest"
-STEPS = ("download", "audio", "scoreboard", "plates", "plate_names", "tdeed", "fuse")
+STEPS = (
+    "download",
+    "audio",
+    "scoreboard",
+    "plates",
+    "plate_names",
+    "transcribe",
+    "tdeed",
+    "fuse",
+)
 TDEED_STEP = "tdeed"
 TDEED_PATTERN = "tdeed_*.json"
 EXIT_WAITING_TDEED = 3  # exit code of the command while the T-DEED file is missing
@@ -255,6 +265,9 @@ def _run(job: _Job) -> IngestResult:
     # Optional: without Tesseract the step records "skipped" and the ingest goes on. It comes
     # before the T-DEED wait, so the names are there while the model output is still missing.
     job.step("plate_names", lambda: tools.stages.plate_names(d, job.match_id, force=False))
+    # Optional too: without a key the step records "skipped". A failure (service, budget) stops the
+    # ingest loudly; the answers of the chunks done are kept, and the next run goes on from them.
+    job.step("transcribe", lambda: tools.stages.transcribe(d, job.match_id, force=False))
     # The lookup is a step of its own, so a failure (two files) is recorded; "waiting" below
     # replaces its "done" entry.
     tdeed = job.step(

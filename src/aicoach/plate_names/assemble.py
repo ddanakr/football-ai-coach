@@ -3,7 +3,8 @@ for what is reported (D-059). No files and no OCR here."""
 
 from collections.abc import Mapping
 
-from aicoach.plate_names.lineup import Player, find_player
+from aicoach.namematch import find_player
+from aicoach.plate_names.lineup import Player
 from aicoach.plate_names.schemas import (
     PlateNames,
     PlateNamesStats,

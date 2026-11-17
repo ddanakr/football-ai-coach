@@ -9,6 +9,7 @@ from aicoach.pipeline import Stages
 from aicoach.plate_names.schemas import PlateNamesResult
 from aicoach.plates.schemas import PlatesResult
 from aicoach.scoreboard.schemas import ScoreboardResult
+from aicoach.speech.transcript import TranscriptResult
 from tests.fixtures.fusion_synth import plates_result
 from tests.fixtures.plates_synth import scoreboard_result
 
@@ -39,6 +40,10 @@ class Recorder:
         self._record("plate_names", args, kwargs)
         return None  # as a skipped step: the ingest must not depend on the names
 
+    def transcribe(self, *args: Any, **kwargs: Any) -> TranscriptResult | None:
+        self._record("transcribe", args, kwargs)
+        return None  # as a skipped step: the ingest must not depend on the commentary
+
     def fusion(self, *args: Any, **kwargs: Any) -> CandidatesResult:
         self._record("fusion", args, kwargs)
         return CandidatesResult(
@@ -64,4 +69,5 @@ class Recorder:
             plates=self.plates,
             fusion=self.fusion,
             plate_names=self.plate_names,
+            transcribe=self.transcribe,
         )

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from aicoach.errors import IngestError, PlatesError, ScoreboardParseError
+from aicoach.errors import ExternalServiceError, IngestError, PlatesError, ScoreboardParseError
 from aicoach.ingest.download import VIDEO_FILE, ProgressCallback
 from aicoach.ingest.lock import LOCK_FILE
 from aicoach.ingest.media import AUDIO_FILE
@@ -131,12 +131,14 @@ def test_run_ingest_with_tdeed_file_runs_every_step_and_ends_done(
         "scoreboard",
         "plates",
         "plate_names",
+        "transcribe",
         "fusion",
     ]
     names_args = fakes.stages.calls[2]
     assert names_args[1][0] == match_dir
     assert names_args[2] == {"force": False}
-    fusion_args = fakes.stages.calls[3][1]
+    assert fakes.stages.calls[3][2] == {"force": False}
+    fusion_args = fakes.stages.calls[4][1]
     assert fusion_args[0] == match_dir
     assert fusion_args[2] == match_dir / "tdeed_small.json"
     assert states(match_dir) == {
@@ -157,7 +159,12 @@ def test_run_ingest_without_tdeed_waits_then_resumes_without_redoing_ready_steps
     assert first.waiting_for_tdeed
     assert first.fusion is None
     # The names come before the wait: they are there while the model output is missing.
-    assert [c[0] for c in fakes.stages.calls] == ["scoreboard", "plates", "plate_names"]
+    assert [c[0] for c in fakes.stages.calls] == [
+        "scoreboard",
+        "plates",
+        "plate_names",
+        "transcribe",
+    ]
     assert states(first.match_dir)["tdeed"] == "waiting"
     assert states(first.match_dir)[STAGE] == "waiting"
     assert not (first.match_dir / LOCK_FILE).exists()
@@ -169,7 +176,13 @@ def test_run_ingest_without_tdeed_waits_then_resumes_without_redoing_ready_steps
     assert not second.waiting_for_tdeed
     assert again.downloader.urls == []  # src.mp4 is there
     assert again.ffmpeg.calls == 0  # audio.wav is there
-    assert [c[0] for c in again.stages.calls] == ["scoreboard", "plates", "plate_names", "fusion"]
+    assert [c[0] for c in again.stages.calls] == [
+        "scoreboard",
+        "plates",
+        "plate_names",
+        "transcribe",
+        "fusion",
+    ]
     assert states(second.match_dir)["tdeed"] == "done"
     assert states(second.match_dir)[STAGE] == "done"
 
@@ -315,7 +328,12 @@ def test_run_ingest_broken_tdeed_file_fails_the_tdeed_step(tmp_path: Path, fakes
         ingest(tmp_path, fakes)
 
     assert states(match_dir)["tdeed"] == "failed"
-    assert [c[0] for c in fakes.stages.calls] == ["scoreboard", "plates", "plate_names"]
+    assert [c[0] for c in fakes.stages.calls] == [
+        "scoreboard",
+        "plates",
+        "plate_names",
+        "transcribe",
+    ]
 
 
 @pytest.mark.unit
@@ -467,3 +485,23 @@ def test_ingest_over_files_that_are_already_there_gives_no_download_or_audio_tim
     assert stages["download"].duration_s is None
     assert stages["audio"].duration_s is None
     assert stages["audio"].state == "done"
+
+
+@pytest.mark.unit
+def test_run_ingest_failing_transcription_stops_before_the_wait_for_tdeed(
+    tmp_path: Path, fakes: Fakes
+) -> None:
+    fakes.stages = Recorder(fail_at="transcribe", error=ExternalServiceError("service down"))
+
+    with pytest.raises(ExternalServiceError, match="stage transcribe failed: service down"):
+        ingest(tmp_path, fakes)
+
+    match_dir = tmp_path / "data" / VID
+    assert [c[0] for c in fakes.stages.calls] == [
+        "scoreboard",
+        "plates",
+        "plate_names",
+        "transcribe",
+    ]
+    assert states(match_dir)[STAGE] == "failed"
+    assert "tdeed" not in states(match_dir)

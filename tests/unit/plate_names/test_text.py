@@ -2,32 +2,7 @@
 
 import pytest
 
-from aicoach.plate_names.text import clean_text, name_key, sorted_key
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize(
-    ("text", "key"),
-    [
-        ("ҚҰДАЙБЕРГЕНОВ", "кудаибергенов"),  # Kazakh letters fold to the Russian ones
-        ("Ёлкин Ғалым", "елкин галым"),
-        ("Mиронов", "миронов"),  # a Latin M inside Cyrillic
-        ("Иванов-Петров", "иванов петров"),
-        ("  Лебедев   Роман  ", "лебедев роман"),
-        ("9 Лебедев", "лебедев"),
-        ("Д'Артаньян", "д артаньян"),
-        ("", ""),
-        ("123", ""),
-        ("--  ..", ""),
-    ],
-)
-def test_name_key_folds_case_letters_and_punctuation(text: str, key: str) -> None:
-    assert name_key(text) == key
-
-
-@pytest.mark.unit
-def test_sorted_key_ignores_the_order_of_the_words() -> None:
-    assert sorted_key("АЙДАР НУРЛАНОВ") == sorted_key("Нурланов Айдар")
+from aicoach.plate_names.text import clean_text
 
 
 @pytest.mark.unit
