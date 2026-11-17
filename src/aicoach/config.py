@@ -30,6 +30,9 @@ DEFAULT_TRANSCRIBE_MODEL = "gemini-3.5-transcribe"
 # calling, and the Gemini speech-to-text model (the OpenRouter route of `DEFAULT_TRANSCRIBE_MODEL`).
 DEFAULT_OPENROUTER_MODEL = "google/gemini-3.5-flash-lite"
 DEFAULT_OPENROUTER_TRANSCRIBE_MODEL = "google/gemini-3.5-transcribe"
+# The model of the whole-match speech stage (D-070): in the D-069 comparison it found 75 of 77 heard
+# words against 54 of 77 for the Gemini model and gave word times and speakers on every fragment.
+DEFAULT_SPEECH_MODEL = "elevenlabs/scribe-v2"
 
 Provider = Literal["openrouter", "gemini"]
 

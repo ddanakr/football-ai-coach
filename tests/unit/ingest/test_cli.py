@@ -70,13 +70,13 @@ def test_cli_ingest_waiting_for_tdeed_exits_3_and_explains_what_to_bring(
     assert "tdeed_<имя>.json" in out
     assert str(tmp_path / VID) in out
     assert "ещё раз" in out
+    assert isinstance(seen.pop("tools"), IngestTools)  # the stages of the settings
     assert seen == {
         "url": f"https://youtu.be/{VID}",
         "data_root": tmp_path,
         "match_id": None,
         "templates": tmp_path / "t",
         "hw_accel": False,
-        "tools": None,
     }
 
 
@@ -177,3 +177,27 @@ def test_cli_ingest_passes_tesseract_cmd_to_the_names_stage(
     assert isinstance(tools, IngestTools)
     tools.stages.plate_names(tmp_path, "m", force=False)
     assert calls == [{"force": False, "tesseract_cmd": tmp_path / "tess.exe"}]
+
+
+@pytest.mark.unit
+def test_cli_ingest_gives_the_transcription_stage_the_loaded_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: dict[str, object] = {}
+
+    def fake(_url: str, data_root: Path, **kwargs: object) -> IngestResult:
+        seen.update(kwargs)
+        return IngestResult(VID, VID, data_root / VID, empty_fusion())
+
+    monkeypatch.setattr(cli, "run_ingest", fake)
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(cli, "run_transcribe", lambda *_a, **k: calls.append(k))
+
+    assert cli.main(["ingest", f"https://youtu.be/{VID}", "--data-root", str(tmp_path)]) == 0
+
+    tools = seen["tools"]
+    assert isinstance(tools, IngestTools)
+    tools.stages.transcribe(tmp_path, "m", force=False)
+    assert len(calls) == 1
+    assert calls[0]["force"] is False
+    assert calls[0]["settings"].aicoach_data_root == tmp_path  # type: ignore[attr-defined]  # noqa: E501

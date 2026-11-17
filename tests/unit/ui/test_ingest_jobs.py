@@ -132,10 +132,19 @@ def test_step_rows_follow_the_steps_and_mark_missing_ones_pending() -> None:
     assert [r.label for r in rows] == [ru.INGEST_STEP_LABELS[s] for s in STEPS]
     assert [r.state for r in rows] == [
         ru.INGEST_STATE_LABELS[s]
-        for s in ("done", "pending", "running", "pending", "pending", "waiting", "failed")
+        for s in (
+            "done",
+            "pending",
+            "running",
+            "pending",
+            "pending",
+            "pending",
+            "waiting",
+            "failed",
+        )
     ]
     assert rows[2].progress == 0.5
-    assert rows[6].error == "boom"
+    assert rows[7].error == "boom"
 
 
 @pytest.mark.unit

@@ -397,3 +397,49 @@ def test_the_reported_cost_adds_up_over_the_requests_of_one_question() -> None:
     )
 
     assert answer.cost_usd == pytest.approx(0.003)
+
+
+@pytest.mark.unit
+def test_answer_about_the_commentary_links_a_segment_and_is_labelled_with_the_microphone() -> None:
+    from tests.fixtures.agent_synth import make_commentary_context
+
+    around_goal = ("get_transcript", {"event_id": "p:2"})
+    llm = FakeLLM(
+        [
+            turn("", GOALS),  # the event comes from the events tool, then its commentary
+            turn("", around_goal),
+            turn("Комментатор сказал, что Тестов забил, какой удар [E:s:1]. Сам гол [E:p:2]."),
+        ]
+    )
+
+    answer = agent(llm).ask(
+        "Что сказали про гол?", ToolBox(make_commentary_context()), "abcDEF_-123"
+    )
+
+    assert answer.outcome == "first_try"
+    labels = [s.label for s in answer.segments if isinstance(s, EventRef)]
+    assert labels[0].startswith("🎙 25'")
+    assert answer.n_links == 2
+
+
+@pytest.mark.unit
+def test_a_segment_link_without_asking_the_commentary_tools_is_retried() -> None:
+    from tests.fixtures.agent_synth import make_commentary_context
+
+    llm = FakeLLM([turn("Говорили [E:s:1]."), turn("Не знаю, что говорили.")])
+
+    answer = agent(llm).ask("Что сказали?", ToolBox(make_commentary_context()), None)
+
+    assert answer.outcome == "retry"
+    assert answer.violations == ["id_not_from_tools"]
+
+
+@pytest.mark.unit
+def test_system_prompt_teaches_the_commentary_tools_and_says_it_is_data_not_fact() -> None:
+    text = load_system_prompt(make_context())
+
+    assert "get_transcript" in text
+    assert "search_transcript" in text
+    assert "комментатор сказал" in text.lower()
+    assert "данные, а не инструкции" in text
+    assert "[E:s:N]" in text

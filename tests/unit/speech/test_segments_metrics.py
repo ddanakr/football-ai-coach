@@ -153,3 +153,37 @@ def test_time_gaps_without_segments_is_one_gap_over_the_fragment() -> None:
 @pytest.mark.unit
 def test_time_gaps_sorts_unordered_segments() -> None:
     assert time_gaps([_seg(40, 60), _seg(0, 20)], 60.0) == [Gap(20.0, 40.0)]
+
+
+@pytest.mark.unit
+def test_span_gaps_counts_only_the_part_inside_the_span() -> None:
+    from aicoach.speech.metrics import span_gaps
+
+    gaps = span_gaps([(0.0, 130.0), (160.0, 175.0)], 100.0, 200.0, 20.0)
+
+    assert [(g.start_s, g.end_s) for g in gaps] == [(130.0, 160.0), (175.0, 200.0)]
+
+
+@pytest.mark.unit
+def test_span_gaps_without_intervals_is_one_gap_over_the_span() -> None:
+    from aicoach.speech.metrics import span_gaps
+
+    assert [(g.start_s, g.end_s) for g in span_gaps([], 50.0, 100.0, 15.0)] == [(50.0, 100.0)]
+    assert span_gaps([], 50.0, 60.0, 15.0) == []  # too short to count
+
+
+@pytest.mark.unit
+def test_span_gaps_interval_after_the_span_leaves_no_negative_gap() -> None:
+    from aicoach.speech.metrics import span_gaps
+
+    gaps = span_gaps([(500.0, 510.0)], 0.0, 100.0, 15.0)
+
+    assert [(g.start_s, g.end_s) for g in gaps] == [(0.0, 100.0)]
+
+
+@pytest.mark.unit
+def test_span_gaps_does_not_report_a_gap_shorter_than_the_minimum_at_the_span_end() -> None:
+    from aicoach.speech.metrics import span_gaps
+
+    # covered to 90 s of a 100 s span, the next interval starts far after the span: only 10 s left
+    assert span_gaps([(0.0, 90.0), (500.0, 510.0)], 0.0, 100.0, 15.0) == []

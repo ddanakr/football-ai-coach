@@ -17,13 +17,25 @@ from typing import Any, Literal  # Any: JSON for and from the model
 import structlog
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from aicoach.agent.context import EventFacts, MatchContext
+from aicoach.agent.context import EventFacts, MatchContext, SegmentFacts
 from aicoach.agent.messages import ToolSpec
-from aicoach.agent.names import name_matches
+from aicoach.agent.transcript_tools import (
+    COMMENTARY_NOTE,
+    DEFAULT_WINDOW_S,
+    MAX_SEARCH_LIMIT,
+    MAX_SEGMENT_LIMIT,
+    GetTranscriptArgs,
+    SearchTranscriptArgs,
+    around,
+    in_minutes,
+    search,
+    segment_json,
+)
 from aicoach.agent.validator import numbers_in
 from aicoach.clips import DEFAULT_AFTER_S, DEFAULT_BEFORE_S
 from aicoach.domain.events import EventType
 from aicoach.errors import ExportError
+from aicoach.namematch import name_matches
 from aicoach.plate_names.schemas import PlayerRead
 
 logger = structlog.get_logger()
@@ -77,6 +89,7 @@ class MakeClipArgs(_Args):
     after_s: float = Field(default=DEFAULT_AFTER_S, ge=0, le=MAX_CLIP_SIDE_S)
 
 
+NO_TRANSCRIPT = "расшифровки комментария для этого матча нет"
 _EVENT_TYPES = [str(t) for t in EventType]
 _SIDES = ["home", "away"]
 
@@ -145,6 +158,42 @@ MAKE_CLIP = _spec(
         "after_s": {"type": "number", "description": "секунд после события (по умолчанию 12)"},
     },
     ["event_id"],
+)
+
+
+GET_TRANSCRIPT = _spec(
+    "get_transcript",
+    "Слова комментаторов (расшифровка, может быть неточной). Либо вокруг события: event_id и "
+    f"окно before_s/after_s секунд (по умолчанию {DEFAULT_WINDOW_S:.0f}/{DEFAULT_WINDOW_S:.0f}); "
+    "либо по игровым минутам: half, minute_from, minute_to. event_id здесь только id события "
+    "(p:N, e:N), не id куска s:N. Возвращает куски речи с их event_id вида s:N, игровой минутой "
+    "и фамилиями игроков.",
+    {
+        "event_id": {"type": "string", "description": "событие, вокруг которого смотреть, p:12"},
+        "before_s": {"type": "number", "description": "секунд речи до события"},
+        "after_s": {"type": "number", "description": "секунд речи после события"},
+        "half": {"type": "integer", "enum": [1, 2], "description": "тайм (для режима минут)"},
+        "minute_from": {"type": "integer", "description": "игровая минута от (включительно)"},
+        "minute_to": {"type": "integer", "description": "игровая минута до (включительно)"},
+        "limit": {
+            "type": "integer",
+            "description": f"сколько кусков вернуть, до {MAX_SEGMENT_LIMIT}",
+        },
+    },
+    [],
+)
+SEARCH_TRANSCRIPT = _spec(
+    "search_transcript",
+    "Найти в словах комментаторов слово или фамилию игрока (с падежами, опечатками и прозвищами "
+    "из состава). Возвращает куски речи с event_id вида s:N и игроков, которых распознал запрос "
+    "(по одному имени «Дмитрий» могут подойти несколько игроков; куски ищутся по фамилии и "
+    "прозвищу).",
+    {
+        "query": {"type": "string", "description": "слово, фамилия или прозвище"},
+        "half": {"type": "integer", "enum": [1, 2], "description": "тайм"},
+        "limit": {"type": "integer", "description": f"сколько вернуть, до {MAX_SEARCH_LIMIT}"},
+    },
+    ["query"],
 )
 
 
@@ -239,7 +288,7 @@ class ToolBox:
 
     def specs(self) -> tuple[ToolSpec, ...]:
         """The tools to offer to the model."""
-        base = (MATCH_INFO, QUERY_EVENTS, GET_EVENT, FIND_PLAYER)
+        base = (MATCH_INFO, QUERY_EVENTS, GET_EVENT, FIND_PLAYER, GET_TRANSCRIPT, SEARCH_TRANSCRIPT)
         return (*base, MAKE_CLIP) if self.clip_maker is not None else base
 
     @property
@@ -254,6 +303,8 @@ class ToolBox:
             QUERY_EVENTS.name: self._query_events,
             GET_EVENT.name: self._get_event,
             FIND_PLAYER.name: self._find_player,
+            GET_TRANSCRIPT.name: self._get_transcript,
+            SEARCH_TRANSCRIPT.name: self._search_transcript,
         }
         if self.clip_maker is not None:
             handlers[MAKE_CLIP.name] = self._make_clip
@@ -281,6 +332,58 @@ class ToolBox:
         self.seen_event_ids.add(facts.event.event_id)
         self.seen_names.update(p.name for p in facts.players if p.name)
         return event_json(facts, self.ctx.team_names)
+
+    def _emit_segment(self, facts: SegmentFacts) -> Result:
+        """The segment for the model; remembers its id, the players and the capitalized words of
+        the text as handed out (a quotation of the commentary may repeat them)."""
+        seg = facts.segment
+        self.seen_event_ids.add(seg.id)
+        self.seen_names.update(m.name for m in seg.players)
+        self.seen_names.update(w for w in seg.text.split() if w[:1].isupper())
+        return segment_json(facts)
+
+    def _segments_result(self, rows: list[SegmentFacts], limit: int, **extra: Any) -> Result:  # noqa: ANN401
+        shown = rows[:limit]
+        result: Result = {
+            "total": len(rows),
+            "returned": len(shown),
+            "segments": [self._emit_segment(f) for f in shown],
+            "note": COMMENTARY_NOTE,
+            **extra,
+        }
+        if len(rows) > len(shown):
+            result["truncated"] = True
+        return result
+
+    def _get_transcript(self, args: Mapping[str, Any]) -> Result:
+        a = GetTranscriptArgs.model_validate(args)
+        if not self.ctx.segments:
+            return {"error": NO_TRANSCRIPT}
+        by_minutes = a.half is not None or a.minute_from is not None or a.minute_to is not None
+        if a.event_id is not None and by_minutes:
+            return {"error": "нужен либо event_id, либо half/minute_from/minute_to, не оба"}
+        if a.event_id is None and not by_minutes:
+            return {"error": "нужен event_id или half/minute_from/minute_to"}
+        if a.minute_from is not None and a.minute_to is not None and a.minute_from > a.minute_to:
+            return {"error": "minute_from больше minute_to"}
+        if a.event_id is not None:
+            facts = self.ctx.by_id().get(a.event_id)
+            if facts is None:
+                return {"error": f"события {a.event_id!r} нет в данных матча"}
+            rows = around(self.ctx.segments, facts.event.t_v, a.before_s, a.after_s)
+            return self._segments_result(rows, a.limit)
+        rows, unknown = in_minutes(self.ctx.segments, a.half, a.minute_from, a.minute_to)
+        extra = {"without_known_minute": unknown} if unknown else {}
+        return self._segments_result(rows, a.limit, **extra)
+
+    def _search_transcript(self, args: Mapping[str, Any]) -> Result:
+        a = SearchTranscriptArgs.model_validate(args)
+        if not self.ctx.segments:
+            return {"error": NO_TRANSCRIPT}
+        rows, players = search(self.ctx.segments, self.ctx.lineup, a.query, a.half)
+        resolved = [{"name": p.name, "side": p.side, "number": p.number} for p in players]
+        self.seen_names.update(p.name for p in players)
+        return self._segments_result(rows, a.limit, resolved_players=resolved)
 
     def _match_info(self, args: Mapping[str, Any]) -> Result:
         if args:

@@ -48,6 +48,8 @@ from aicoach.speech.run import (
 from aicoach.speech.run import format_summary as format_speech_summary
 from aicoach.speech.run import format_transcript, lineup_terms, run_speech_test
 from aicoach.speech.service import make_transcriber
+from aicoach.speech.stage import STAGE as TRANSCRIBE_STAGE
+from aicoach.speech.stage import run_transcribe
 from aicoach.spotting.convert import DEFAULT_FPS, DEFAULT_MERGE_RADIUS_S
 from aicoach.spotting.evaluation import DEFAULT_THRESHOLDS, DEVELOPMENT_HALF, format_evaluation
 from aicoach.spotting.run import DEFAULT_GROUND_TRUTH, run_spotting_eval
@@ -90,6 +92,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--lineups", type=Path, help="lineups.csv (default: lineups.csv by the video, if present)"
     )
     names.add_argument("--force", action="store_true", help="ignore an up-to-date result")
+
+    transcribe = commands.add_parser(
+        "transcribe",
+        help="transcribe the commentary of the whole match into transcript.json (D-070)",
+    )
+    transcribe.add_argument(
+        "--match-dir", type=Path, required=True, help="match directory (audio.wav or src.mp4)"
+    )
+    transcribe.add_argument("--match-id", help="default: name of the match directory")
+    transcribe.add_argument(
+        "--lineups", type=Path, help="lineups.csv (default: lineups.csv in the match directory)"
+    )
+    _add_provider_options(
+        transcribe, "default: elevenlabs/scribe-v2 (openrouter); GEMINI_TRANSCRIBE_MODEL (gemini)"
+    )
+    transcribe.add_argument(
+        "--force",
+        action="store_true",
+        help="build the transcript again from the kept answers (no new request; delete "
+        "speech_chunks/ to ask the model again)",
+    )
 
     fuse = commands.add_parser(
         "fuse", help="merge scoreboard, plates and model events into the database"
@@ -403,10 +426,12 @@ def _ingest(args: argparse.Namespace) -> int:
     settings = load_settings(data_root=args.data_root)
     if settings.aicoach_data_root is None:
         raise ConfigError(ru.NO_DATA_ROOT)
-    tools = None
-    if settings.tesseract_cmd is not None:
-        names = partial(run_plate_names, tesseract_cmd=settings.tesseract_cmd)
-        tools = IngestTools(stages=Stages(plate_names=names))
+    tools = IngestTools(
+        stages=Stages(
+            plate_names=partial(run_plate_names, tesseract_cmd=settings.tesseract_cmd),
+            transcribe=partial(run_transcribe, settings=settings),
+        )
+    )
     result = run_ingest(
         args.url,
         settings.aicoach_data_root,
@@ -551,6 +576,41 @@ def _speech_test(args: argparse.Namespace) -> int:
     return 0
 
 
+def _transcribe(args: argparse.Namespace) -> int:
+    """Run the transcription stage and print numbers only (never the text of the commentary)."""
+    match_dir: Path = args.match_dir
+    match_id: str = args.match_id or match_dir.resolve().name
+    settings = load_settings(llm_provider=args.provider)
+    result = run_transcribe(
+        match_dir,
+        match_id,
+        lineup_path=args.lineups,
+        force=args.force,
+        model=args.model,
+        settings=settings,
+    )
+    if result is None:
+        reason = read_status(match_dir).stages[TRANSCRIBE_STAGE].error
+        sys.stdout.write(f"transcribe skipped: {reason}\n")
+        return 0
+    stats = result.stats
+    cost = "unknown" if stats.cost_usd is None else f"{stats.cost_usd:.4f} USD"
+    sys.stdout.write(
+        f"transcript.json: {stats.n_segments} segments, {stats.n_words} words, "
+        f"{stats.n_mentions} player mentions, {stats.n_chunks} chunks; model {result.model}; "
+        f"cost {cost}; speaker labels without evidence: {stats.speakers_unresolved}\n"
+    )
+    for half in result.halves:
+        label = f"half {half.half}" if half.half else "whole sound"
+        sys.stdout.write(
+            f"  {label}: {half.n_segments} segments, {half.n_gaps} gaps, "
+            f"{half.gap_s:.0f} s ({half.gap_share:.1%}) without speech\n"
+        )
+    for text in result.warnings:
+        sys.stdout.write(f"  warning: {text}\n")
+    return 0
+
+
 def _clip(args: argparse.Namespace) -> int:
     path = export_event_clip(
         args.db or args.video.parent / DB_FILE,
@@ -576,6 +636,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _plates(args)
         if args.command == "plate-names":
             return _plate_names(args)
+        if args.command == "transcribe":
+            return _transcribe(args)
         if args.command == "spotting-eval":
             return _spotting_eval(args)
         if args.command == "final-eval":

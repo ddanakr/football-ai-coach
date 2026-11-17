@@ -18,11 +18,11 @@ import re
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 
-from aicoach.agent.names import same_word, words
-from aicoach.plate_names.text import name_key
+from aicoach.namematch import name_key, same_word, words
 
 LINK = re.compile(r"\[E:([^\]\s]*)\]")
-EVENT_ID = re.compile(r"[pe]:\d+")
+# `p:` a prediction, `e:` an added event, `s:` a stretch of the commentary (D-070).
+EVENT_ID = re.compile(r"[pes]:\d+")
 _ANY_LINK_LIKE = re.compile(r"\[E:[^\]]*\]")
 _TIMECODES = (
     re.compile(r"(?<![\d:])\d{1,2}:\d{2}:\d{2}(?![\d:])"),  # 1:02:03
@@ -154,7 +154,7 @@ def find_violations(
     Args:
         text: The model's answer.
         seen_ids: Event ids the tools returned in this conversation.
-        existing_ids: Ids in `events_current` now.
+        existing_ids: Ids in `events_current` now and of the commentary segments.
         allowed_names: Names the tools returned plus the team names (full names, any case).
         allowed_numbers: Numbers of the tool results and arguments of this question, and the
             numbers of the question text. Numbers spelled as words are not checked.
