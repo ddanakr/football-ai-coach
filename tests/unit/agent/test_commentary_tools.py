@@ -1,6 +1,7 @@
 """The commentary tools, the validator and the rendering of `s:N` ids (synthetic, no model)."""
 
 import json
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -16,6 +17,7 @@ from aicoach.agent.transcript_tools import (
 )
 from aicoach.agent.validator import find_violations
 from aicoach.errors import ConfigError
+from aicoach.plate_names.lineup import Player
 from tests.fixtures.agent_synth import (
     ALIASED,
     NURLANOV,
@@ -23,6 +25,7 @@ from tests.fixtures.agent_synth import (
     TESTOV,
     make_commentary_context,
     make_context,
+    make_segment,
 )
 
 
@@ -337,3 +340,71 @@ def test_render_leaves_an_unknown_segment_link_as_written() -> None:
 def test_bad_youtube_id_in_a_segment_link_is_a_configuration_error() -> None:
     with pytest.raises(ConfigError):
         render_answer("Сказали [E:s:1].", make_commentary_context(), "short")
+
+
+NANI = Player("home", "Алмейда да Кунья", 8, aliases=("Нани",))
+
+
+def _nickname_box(*, lineup: bool = True) -> ToolBox:
+    """Commentary that says a nickname in lower case (so the text itself does not hand it out)."""
+    base = make_commentary_context()
+    segments = (
+        make_segment(0, 1480.0, "вот нани выходит один на один", 1, 24, [NANI]),
+        make_segment(1, 1502.0, "Тестов забивает", 1, 25, [TESTOV]),
+    )
+    players = (TESTOV, PROBNY, NANI, NURLANOV, ALIASED)
+    return ToolBox(replace(base, segments=segments, lineup=players if lineup else ()))
+
+
+@pytest.mark.unit
+def test_validator_accepts_the_nickname_of_a_player_the_tools_returned() -> None:
+    tools = _nickname_box()
+    tools.call("search_transcript", {"query": "Нани"})
+
+    assert _violations("Комментатор говорил про Нани [E:s:0].", tools) == []
+
+
+@pytest.mark.unit
+def test_validator_accepts_a_kazakh_form_of_the_nickname_with_a_case_ending() -> None:
+    base = _nickname_box().ctx
+    kazakh = replace(NANI, aliases=("Құдайберген",))
+    tools = ToolBox(replace(base, lineup=(kazakh, TESTOV)))
+    tools.seen_names.add(kazakh.name)  # a tool returned the player
+
+    assert _violations("Про Кудайбергена было много слов.", tools) == []
+    assert _violations("Про Кұдайбергені было много слов.", tools) == []
+
+
+@pytest.mark.unit
+def test_validator_refuses_the_nickname_of_a_player_the_tools_did_not_return() -> None:
+    tools = _nickname_box()
+    tools.call("search_transcript", {"query": "Тестов"})  # Нани is not in the results
+
+    assert "Нани" not in tools.allowed_names
+    assert "unknown_name" in _violations("Комментатор говорил про Нани [E:s:1].", tools)
+
+
+@pytest.mark.unit
+def test_validator_refuses_the_nickname_of_another_player_than_the_returned_one() -> None:
+    tools = _nickname_box()
+    tools.call("search_transcript", {"query": "Нани"})
+
+    # «Образец» is the nickname of Образцов, who did not come back from the tools.
+    assert "unknown_name" in _violations("Говорили и про Образец [E:s:0].", tools)
+
+
+@pytest.mark.unit
+def test_validator_refuses_an_invented_name_even_when_nicknames_are_allowed() -> None:
+    tools = _nickname_box()
+    tools.call("search_transcript", {"query": "Нани"})
+
+    assert "unknown_name" in _violations("Комментатор хвалил Выдумова [E:s:0].", tools)
+
+
+@pytest.mark.unit
+def test_without_a_lineup_a_nickname_is_not_allowed_as_before() -> None:
+    tools = _nickname_box(lineup=False)
+    tools.call("get_transcript", {"event_id": "p:2", "before_s": 60})
+
+    assert tools.ctx.lineup == ()
+    assert "unknown_name" in _violations("Говорили про Нани [E:s:0].", tools)

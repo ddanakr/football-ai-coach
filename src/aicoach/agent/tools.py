@@ -36,7 +36,7 @@ from aicoach.clips import DEFAULT_AFTER_S, DEFAULT_BEFORE_S
 from aicoach.domain.events import EventType
 from aicoach.episode import EpisodeDescription
 from aicoach.errors import ExportError, ExternalServiceError
-from aicoach.namematch import name_matches
+from aicoach.namematch import name_key, name_matches
 from aicoach.plate_names.schemas import PlayerRead
 
 logger = structlog.get_logger()
@@ -325,8 +325,15 @@ class ToolBox:
 
     @property
     def allowed_names(self) -> set[str]:
-        """Names the answer may use: handed out by the tools, plus the team names."""
-        return self.seen_names | set(self.ctx.team_names.values())
+        """Names the answer may use: handed out by the tools, the nicknames of those players
+        (the lineup `aliases`, D-077) and the team names."""
+        return self.seen_names | self._seen_aliases() | set(self.ctx.team_names.values())
+
+    def _seen_aliases(self) -> set[str]:
+        """The nicknames of the lineup players whose full name a tool handed out. A nickname of
+        a player the tools did not return is not here: the answer may not use it."""
+        seen = {name_key(n) for n in self.seen_names}
+        return {a for p in self.ctx.lineup if name_key(p.name) in seen for a in p.aliases}
 
     def call(self, name: str, args: Mapping[str, Any]) -> Result:
         """Run a tool; a wrong name or wrong arguments give `{"error": ...}` for the model."""

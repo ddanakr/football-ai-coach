@@ -94,10 +94,13 @@ def _starts_sentence(text: str, start: int) -> bool:
 
 
 def _is_allowed(token: str, allowed: Collection[str]) -> bool:
-    key = name_key(token)
-    if not key or key in ALLOWED_WORDS or token.casefold() in ALLOWED_WORDS:
+    """A token is allowed when every word of it is: a hyphenated token ("Премьер-лиге") is
+    checked word by word, like the names it may repeat (the key reads a hyphen as a space)."""
+    keys = name_key(token).split()
+    if not keys or token.casefold() in ALLOWED_WORDS:
         return True
-    return any(same_word(key, known) for name in allowed for known in words(name))
+    known = [word for name in allowed for word in words(name)]
+    return all(k in ALLOWED_WORDS or any(same_word(k, w) for w in known) for k in keys)
 
 
 def _name_violations(text: str, allowed_names: Collection[str]) -> list[Violation]:
