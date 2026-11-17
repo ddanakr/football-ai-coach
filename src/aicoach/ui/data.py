@@ -11,7 +11,7 @@ from aicoach.fusion.schemas import CandidatesResult
 from aicoach.fusion.stage import RESULT_FILE as CANDIDATES_FILE
 from aicoach.plate_names.schemas import PlateNamesResult
 from aicoach.plate_names.stage import RESULT_FILE as PLATE_NAMES_FILE
-from aicoach.scoreboard.schemas import ScoreboardResult
+from aicoach.scoreboard.schemas import OffsetSegment, ScoreboardResult
 from aicoach.scoreboard.stage import RESULT_FILE as SCOREBOARD_FILE
 from aicoach.storage import (
     CurrentEvent,
@@ -170,3 +170,35 @@ def load_player_texts(match_dir: Path) -> dict[PlayerKey, str]:
     except OSError:
         return {}
     return _read_players(candidates, names, stamp)
+
+
+@lru_cache(maxsize=2)
+def _read_segments(
+    board: Path,
+    stamp: int,  # noqa: ARG001 - only part of the cache key
+) -> tuple[OffsetSegment, ...]:
+    """The clock segments of `scoreboard.json`; `stamp` (its modification time) keys the cache."""
+    try:
+        return tuple(
+            ScoreboardResult.model_validate_json(board.read_text(encoding="utf-8")).offset_segments
+        )
+    except (OSError, ValueError) as err:
+        logger.warning(
+            "clock_segments_unavailable",
+            stage="ui",
+            reason=type(err).__name__,
+            path=str(board.parent),
+        )
+        return ()
+
+
+def load_clock_segments(match_dir: Path) -> tuple[OffsetSegment, ...]:
+    """The clock segments that give the game minute of a video time; empty when
+    `scoreboard.json` is missing or invalid (the minute is then unknown). Cached until the file
+    changes."""
+    board = match_dir / SCOREBOARD_FILE
+    try:
+        stamp = board.stat().st_mtime_ns
+    except OSError:
+        return ()
+    return _read_segments(board, stamp)

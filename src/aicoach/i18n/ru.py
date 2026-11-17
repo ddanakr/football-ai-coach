@@ -202,6 +202,7 @@ INGEST_STEP_LABELS: dict[str, str] = {
     "transcribe": "Расшифровка комментария",
     "tdeed": "Файл T-DEED",
     "fuse": "Слияние в базу",
+    "review_candidates": "Кандидаты для проверки",
 }
 INGEST_STATE_LABELS: dict[str, str] = {
     "pending": "ещё не начато",
@@ -268,3 +269,39 @@ AGENT_OUTCOME_LABELS: dict[str, str] = {
     "retry": "со второй попытки",
     "refused": "отказ",
 }
+
+
+# The review mode (D-075): the events and the candidates of the model with a check on every row.
+REVIEW_MODE = "Режим проверки"
+REVIEW_MODE_HELP = (
+    "Список событий и кандидатов (ударов модели, которых нет среди событий) с кнопками ✓ и ✗ "
+    "у каждой строки. "
+    "Агент кандидатов не видит."
+)
+REVIEW_SHOW_ALL = "Показать всё"
+REVIEW_SHOW_ALL_HELP = "Вместе с уже решёнными строками."
+REVIEW_HEADER = "Проверка"
+REVIEW_PROGRESS = "Проверено {checked} из {total}"
+REVIEW_NEXT = "Следующий"
+REVIEW_CANDIDATE_MARK = "кандидат"
+REVIEW_DECIDED_MARK = "решено"
+REVIEW_NO_LAYER = (
+    "Файла кандидатов нет: показаны только события. Постройте его командой "
+    "`python -m aicoach.cli review-candidates --match-dir <каталог матча>`."
+)
+REVIEW_NOTHING_LEFT = "Всё проверено: в списке не осталось строк."
+REVIEW_NO_MATCH_DIR = "Режим проверки не работает без каталога матча."
+REVIEW_OK_HELP_CANDIDATE = "Добавить событие"
+REVIEW_NO_HELP_CANDIDATE = "Отклонить кандидата"
+REVIEW_OK_HELP_EVENT = "Подтвердить событие"
+REVIEW_NO_HELP_EVENT = "Удалить событие"
+REVIEW_PLAY_HELP = "Показать в плеере"
+REVIEW_ACCEPTED = "Кандидат добавлен как событие: {type} {time}."
+REVIEW_REJECTED = "Кандидат отклонён: {type} {time}."
+REVIEW_CONFIRMED = "Событие подтверждено: {type} {time}."
+REVIEW_GONE = "Этой строки уже нет в списке: страница обновилась, повторите."
+REVIEW_LOG_FAILED = (
+    "Не удалось записать решение в журнал проверки: {error}. "
+    "Событие уже изменено, строку решённой не считаем."
+)
+REVIEW_LOG_BROKEN = "Журнал проверки не читается: {error}"

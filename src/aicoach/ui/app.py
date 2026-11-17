@@ -64,7 +64,15 @@ from aicoach.ui.logic import (
     table_records,
     to_row,
     to_rows,
+    type_label,
     youtube_link,
+)
+from aicoach.ui.review_logic import ReviewRow, filter_review_rows
+from aicoach.ui.review_panel import (
+    ReviewView,
+    load_review_view,
+    render_review_list,
+    render_toggle,
 )
 from aicoach.youtube import watch_url
 
@@ -101,11 +109,10 @@ def _type_text(event_type: EventType) -> str:
     return ru.TYPE_LABELS[event_type]
 
 
-def _sidebar(events: list[CurrentEvent]) -> EventFilter:
+def _sidebar(present: list[EventType]) -> EventFilter:
     """Draw the filters in the sidebar and return what the user chose."""
     with st.sidebar:
         st.header(ru.SIDEBAR_FILTERS)
-        present = available_types(events)
         types = st.multiselect(ru.FILTER_TYPES, present, default=present, format_func=_type_text)
         half = st.radio(ru.FILTER_HALF, _HALF_OPTIONS, format_func=_half_text)
         min_score = st.slider(
@@ -309,19 +316,17 @@ def _take_pick(rows: list[EventRow], picked: tuple[int, ...]) -> None:
         st.session_state[_SELECTED] = chosen.event_id
 
 
-def _render_player(args: AppArgs, selected: CurrentEvent | None) -> None:
-    t_v = 0.0 if selected is None else selected.t_v
+def _render_player(args: AppArgs, target: tuple[float, str, str] | None) -> None:
+    """The player on the chosen row: `target` is its `(t_v, type text, time text)`."""
+    t_v = 0.0 if target is None else target[0]
     # Nothing chosen yet: show the start of the video and do not play by itself.
-    start = 0 if selected is None else player_start(t_v)
-    if selected is not None:
-        row = to_row(selected)
-        st.markdown(f"**{ru.PLAYING.format(type=row.type_label, time=row.time_text)}**")
+    start = 0 if target is None else player_start(t_v)
+    if target is not None:
+        st.markdown(f"**{ru.PLAYING.format(type=target[1], time=target[2])}**")
     else:
         st.caption(ru.TABLE_HINT)
-    st.video(watch_url(args.youtube_id), start_time=start, autoplay=selected is not None)
-    link = (
-        youtube_link(args.youtube_id, t_v) if selected is not None else watch_url(args.youtube_id)
-    )
+    st.video(watch_url(args.youtube_id), start_time=start, autoplay=target is not None)
+    link = youtube_link(args.youtube_id, t_v) if target is not None else watch_url(args.youtube_id)
     st.markdown(f"{ru.LINK_TEXT}: [{link}]({link})")
     st.caption(ru.TIME_NOTE)
 
@@ -505,9 +510,33 @@ def _render_ingest_panel(start: StartArgs) -> None:
             _job_panel()
 
 
-def _select_event(event_id: str) -> None:
-    """Make an event the chosen one (a link of the agent's answer): the player shows it."""
+def _select_event(event_id: str | None) -> None:
+    """Make an event or a review row the chosen one (a link of the agent's answer, a click in the
+    review list): the player shows it. None clears the choice."""
     st.session_state[_SELECTED] = event_id
+
+
+def _player_target(
+    selected: CurrentEvent | None, review_row: ReviewRow | None
+) -> tuple[float, str, str] | None:
+    """What the player shows: a chosen event, or a chosen row of the review (a candidate has no
+    event behind it)."""
+    if selected is not None:
+        row = to_row(selected)
+        return selected.t_v, row.type_label, row.time_text
+    if review_row is not None:
+        text = f"{type_label(review_row.type)} ({review_row.source_text})"
+        return review_row.t_v, text, format_mmss(review_row.t_v)
+    return None
+
+
+def _review_view(args: AppArgs, events: list[CurrentEvent], *, show_all: bool) -> ReviewView | None:
+    """The review mode's rows, or None (with a message) when its journal cannot be read."""
+    try:
+        return load_review_view(args, events, show_all=show_all)
+    except StorageError as err:
+        st.error(ru.REVIEW_LOG_BROKEN.format(error=err))
+        return None
 
 
 def _load(args: AppArgs) -> tuple[list[CurrentEvent], int]:
@@ -545,22 +574,40 @@ def main() -> None:
         if n_edits == 0:
             st.stop()  # nothing to show, edit or undo
     by_id = {e.event_id: e for e in events}
-    if st.session_state.get(_SELECTED) not in by_id:
+    review_on, show_all = render_toggle()
+    view = _review_view(args, events, show_all=show_all) if review_on else None
+    known_ids = set(by_id) | set(() if view is None else view.lookup)
+    if st.session_state.get(_SELECTED) not in known_ids:
         st.session_state[_SELECTED] = None  # deleted, undone, or replaced by a new run
 
-    shown = filter_events(events, _sidebar(events))
+    present = available_types(events)
+    if view is not None:
+        present = [t for t in EventType if t in view.types | set(present)]
+    flt = _sidebar(present)
+    shown = filter_events(events, flt)
     # Filled below the table code (the pick is known only then): the video on the left, the
     # agent panel on the right, the table full width under both.
     player_slot, agent_slot = st.columns(TOP_COLUMNS)
-    st.caption(ru.SHOWN.format(shown=len(shown), total=len(events)))
-    if shown:
-        rows = to_rows(shown, load_player_texts(args.results_dir))
-        _take_pick(rows, _render_table(rows))
+    if view is not None:
+        render_review_list(
+            args,
+            view,
+            filter_review_rows(view.rows, flt),
+            st.session_state[_SELECTED],
+            _flash,
+            _select_event,
+        )
     else:
-        st.info(ru.NOTHING_MATCHES)
+        st.caption(ru.SHOWN.format(shown=len(shown), total=len(events)))
+        if shown:
+            rows = to_rows(shown, load_player_texts(args.results_dir))
+            _take_pick(rows, _render_table(rows))
+        else:
+            st.info(ru.NOTHING_MATCHES)
     selected = by_id.get(st.session_state[_SELECTED])
+    review_row = None if view is None else view.lookup.get(st.session_state[_SELECTED])
     with player_slot:
-        _render_player(args, selected)
+        _render_player(args, _player_target(selected, review_row))
     with agent_slot:
         render_agent_panel(args, _select_event)
     _render_edit_panel(args, selected, n_edits)

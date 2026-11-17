@@ -141,6 +141,7 @@ def test_step_rows_follow_the_steps_and_mark_missing_ones_pending() -> None:
             "pending",
             "waiting",
             "failed",
+            "pending",
         )
     ]
     assert rows[2].progress == 0.5

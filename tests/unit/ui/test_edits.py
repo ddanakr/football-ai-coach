@@ -13,6 +13,7 @@ from aicoach.ui.edits import (
     check_time,
     parse_mmss,
     plan_add,
+    plan_add_at,
     plan_delete,
     plan_move,
     plan_retype,
@@ -172,6 +173,21 @@ def test_plan_add_gives_an_add_edit_without_a_target() -> None:
 def test_plan_add_refuses_bad_times(text: str) -> None:
     with pytest.raises(EditInputError):
         plan_add(EventType.CORNER, text, BOUNDS)
+
+
+@pytest.mark.unit
+def test_plan_add_at_keeps_the_exact_time_that_mmss_would_cut() -> None:
+    plan = plan_add_at(EventType.SHOT, 300.64, BOUNDS)
+
+    assert (plan.action, plan.target, plan.type, plan.t_v) == ("add", None, EventType.SHOT, 300.64)
+    assert plan.message == "Добавлено событие «Удар» в 05:00 (1-й тайм)."
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("t_v", [50.0, 1200.0, 3000.5, -1.0, math.nan, math.inf])
+def test_plan_add_at_refuses_a_time_outside_the_halves_or_not_a_time(t_v: float) -> None:
+    with pytest.raises(EditInputError):
+        plan_add_at(EventType.SHOT, t_v, BOUNDS)
 
 
 @pytest.mark.unit
