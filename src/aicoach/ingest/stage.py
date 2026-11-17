@@ -4,9 +4,11 @@ Steps, each with its own entry in `status.json` of the match directory: `downloa
 frame size check), `audio` (16 kHz mono WAV), `scoreboard`, `plates`, `plate_names` (player names
 read from the plate crops, skipped when Tesseract is missing), `transcribe` (the commentary of
 the whole match, skipped without a key of the provider), `tdeed` (the model output
-brought from the notebook) and `fuse`. The `ingest` entry tells the whole state. Every step
-skips what is ready, so a repeated ingest continues where the last one stopped. Without the
-T-DEED file the command stops with the `tdeed` step `waiting` (D-058).
+brought from the notebook), `fuse` and `review_candidates` (the extra model shots for the
+review mode, D-075; optional: a failure is recorded and the ingest goes on). The `ingest` entry
+tells the whole state. Every step skips what is ready, so a repeated ingest continues where the
+last one stopped. Without the T-DEED file the command stops with the `tdeed` step `waiting`
+(D-058).
 """
 
 import re
@@ -43,6 +45,7 @@ STEPS = (
     "transcribe",
     "tdeed",
     "fuse",
+    "review_candidates",
 )
 TDEED_STEP = "tdeed"
 TDEED_PATTERN = "tdeed_*.json"
@@ -231,6 +234,23 @@ class _Job:
         )
 
 
+def _review_layer(job: _Job, tdeed: Path) -> None:
+    """The layer of extra model shots for the review mode (D-075), after the fusion.
+
+    The events are in the database already, so a failure here must not stop the ingest: it is
+    logged and recorded in the `review_candidates` entry of `status.json`, and the ingest goes
+    on. Ctrl+C and other interrupts are not caught: they pass through (the caller marks the
+    ingest as failed).
+    """
+    name = "review_candidates"
+    try:
+        job.tools.stages.review_candidates(job.match_dir, job.match_id, tdeed, force=False)
+    except Exception as err:  # an optional step: the reason is logged and recorded, not hidden
+        reason = str(err) or type(err).__name__
+        job.log.warning("optional_step_failed", step=name, reason=reason)
+        set_status(job.match_dir, name, "failed", 0.0, job.log, error=reason)
+
+
 def _run(job: _Job) -> IngestResult:
     d, log, tools = job.match_dir, job.log, job.tools
     job.step("templates", lambda: ensure_templates(d, job.templates))
@@ -290,6 +310,7 @@ def _run(job: _Job) -> IngestResult:
         "fuse",
         lambda: tools.stages.fusion(d, job.match_id, tdeed, None, force=False, discard_edits=False),
     )
+    job.step("review_candidates", lambda: _review_layer(job, tdeed))
     set_status(d, STAGE, "done", 1.0, log)
     return IngestResult(job.video_id, job.match_id, d, fusion)
 

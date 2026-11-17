@@ -8,6 +8,7 @@ from aicoach.fusion.schemas import CandidatesResult
 from aicoach.pipeline import Stages
 from aicoach.plate_names.schemas import PlateNamesResult
 from aicoach.plates.schemas import PlatesResult
+from aicoach.review.schemas import ReviewCandidatesResult
 from aicoach.scoreboard.schemas import ScoreboardResult
 from aicoach.speech.transcript import TranscriptResult
 from tests.fixtures.fusion_synth import plates_result
@@ -44,6 +45,25 @@ class Recorder:
         self._record("transcribe", args, kwargs)
         return None  # as a skipped step: the ingest must not depend on the commentary
 
+    def review_candidates(self, *args: Any, **kwargs: Any) -> ReviewCandidatesResult:
+        self._record("review_candidates", args, kwargs)
+        return ReviewCandidatesResult(
+            match_id="m",
+            cache_key="k",
+            events_version="a",
+            model_version="b",
+            scoreboard_version="c",
+            model_file="tdeed_x.json",
+            merge_radius_s=3.0,
+            n_model=0,
+            n_existing=0,
+            n_merged=0,
+            n_outside_halves=0,
+            half_bounds={},
+            candidates=[],
+            counts={},
+        )
+
     def fusion(self, *args: Any, **kwargs: Any) -> CandidatesResult:
         self._record("fusion", args, kwargs)
         return CandidatesResult(
@@ -70,4 +90,5 @@ class Recorder:
             fusion=self.fusion,
             plate_names=self.plate_names,
             transcribe=self.transcribe,
+            review_candidates=self.review_candidates,
         )

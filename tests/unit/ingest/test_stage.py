@@ -6,8 +6,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
+from structlog.testing import capture_logs
 
-from aicoach.errors import ExternalServiceError, IngestError, PlatesError, ScoreboardParseError
+from aicoach.errors import (
+    ExternalServiceError,
+    FusionError,
+    IngestError,
+    PlatesError,
+    ScoreboardParseError,
+)
 from aicoach.ingest.download import VIDEO_FILE, ProgressCallback
 from aicoach.ingest.lock import LOCK_FILE
 from aicoach.ingest.media import AUDIO_FILE
@@ -133,6 +140,7 @@ def test_run_ingest_with_tdeed_file_runs_every_step_and_ends_done(
         "plate_names",
         "transcribe",
         "fusion",
+        "review_candidates",
     ]
     names_args = fakes.stages.calls[2]
     assert names_args[1][0] == match_dir
@@ -141,6 +149,10 @@ def test_run_ingest_with_tdeed_file_runs_every_step_and_ends_done(
     fusion_args = fakes.stages.calls[4][1]
     assert fusion_args[0] == match_dir
     assert fusion_args[2] == match_dir / "tdeed_small.json"
+    # The layer of the review mode (D-075) comes after the fusion and reads the same T-DEED file.
+    layer_args = fakes.stages.calls[5]
+    assert layer_args[1] == (match_dir, VID, match_dir / "tdeed_small.json")
+    assert layer_args[2] == {"force": False}
     assert states(match_dir) == {
         "download": "done",
         "audio": "done",
@@ -182,6 +194,7 @@ def test_run_ingest_without_tdeed_waits_then_resumes_without_redoing_ready_steps
         "plate_names",
         "transcribe",
         "fusion",
+        "review_candidates",
     ]
     assert states(second.match_dir)["tdeed"] == "done"
     assert states(second.match_dir)[STAGE] == "done"
@@ -505,3 +518,57 @@ def test_run_ingest_failing_transcription_stops_before_the_wait_for_tdeed(
     ]
     assert states(match_dir)[STAGE] == "failed"
     assert "tdeed" not in states(match_dir)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("error", [FusionError("candidates.json is stale"), RuntimeError("boom")])
+def test_run_ingest_failing_review_layer_is_recorded_and_the_ingest_goes_on(
+    tmp_path: Path, fakes: Fakes, error: Exception
+) -> None:
+    match_dir = tmp_path / "data" / VID
+    match_dir.mkdir(parents=True)
+    write_tdeed(match_dir / "tdeed_small.json", [])
+    fakes.stages = Recorder(fail_at="review_candidates", error=error)
+
+    result = ingest(tmp_path, fakes)
+
+    assert not result.waiting_for_tdeed  # the events are in the database
+    assert result.fusion is not None
+    assert [c[0] for c in fakes.stages.calls][-2:] == ["fusion", "review_candidates"]
+    entries = read_status(match_dir).stages
+    assert entries[STAGE].state == "done"
+    assert entries["review_candidates"].state == "failed"
+    assert str(error) in (entries["review_candidates"].error or "")
+    assert not (match_dir / LOCK_FILE).exists()
+
+
+@pytest.mark.unit
+def test_run_ingest_failing_review_layer_has_a_log_line_and_a_timing(
+    tmp_path: Path, fakes: Fakes
+) -> None:
+    match_dir = tmp_path / "data" / VID
+    match_dir.mkdir(parents=True)
+    write_tdeed(match_dir / "tdeed_small.json", [])
+    fakes.stages = Recorder(fail_at="review_candidates", error=FusionError("stale"))
+
+    with capture_logs() as logs:
+        ingest(tmp_path, fakes)
+
+    failed = [e for e in logs if e["event"] == "optional_step_failed"]
+    assert [(e["step"], e["reason"]) for e in failed] == [("review_candidates", "stale")]
+
+
+@pytest.mark.unit
+def test_run_ingest_interrupt_in_the_review_layer_is_not_swallowed(
+    tmp_path: Path, fakes: Fakes
+) -> None:
+    match_dir = tmp_path / "data" / VID
+    match_dir.mkdir(parents=True)
+    write_tdeed(match_dir / "tdeed_small.json", [])
+    fakes.stages = Recorder(fail_at="review_candidates", error=KeyboardInterrupt())
+
+    with pytest.raises(KeyboardInterrupt):
+        ingest(tmp_path, fakes)
+
+    assert states(match_dir)[STAGE] == "failed"
+    assert not (match_dir / LOCK_FILE).exists()

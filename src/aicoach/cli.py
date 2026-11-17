@@ -32,7 +32,7 @@ from aicoach.fusion.schemas import CandidatesResult
 from aicoach.fusion.stage import DB_FILE, run_fuse
 from aicoach.i18n import ru
 from aicoach.ingest.download import VIDEO_FILE
-from aicoach.ingest.stage import EXIT_WAITING_TDEED, IngestTools, run_ingest
+from aicoach.ingest.stage import EXIT_WAITING_TDEED, IngestTools, find_tdeed_file, run_ingest
 from aicoach.logging_setup import configure_logging
 from aicoach.pipeline import Stages, run_pipeline
 from aicoach.plate_names.lineup import LINEUP_FILE
@@ -40,6 +40,9 @@ from aicoach.plate_names.stage import STAGE as PLATE_NAMES_STAGE
 from aicoach.plate_names.stage import run_plate_names
 from aicoach.plates.config import PlatesConfig
 from aicoach.plates.stage import run_plates
+from aicoach.review.evaluation import ReviewEvalPaths, run_review_eval
+from aicoach.review.stage import run_review_candidates
+from aicoach.review.stats import format_stats, parse_window, run_review_stats
 from aicoach.scoreboard.config import ScoreboardConfig
 from aicoach.scoreboard.stage import (
     DEFAULT_CALIBRATION_STEP_S,
@@ -297,6 +300,38 @@ def build_parser() -> argparse.ArgumentParser:
     fin.add_argument(
         "--final", action="store_true", help="also evaluate half 2 (reserved; run once)"
     )
+
+    cand = commands.add_parser(
+        "review-candidates",
+        help="extra model shots for the review mode: review_candidates.json (D-075)",
+    )
+    cand.add_argument("--match-dir", type=Path, required=True, help="directory of the match files")
+    cand.add_argument("--match-id", help="default: name of the match directory")
+    cand.add_argument(
+        "--predictions", type=Path, help="T-DEED file used by fuse (default: tdeed_*.json there)"
+    )
+    cand.add_argument("--force", action="store_true", help="ignore an up-to-date result")
+
+    stats = commands.add_parser(
+        "review-stats", help="measure a window of video time in review_log.jsonl (D-075)"
+    )
+    stats.add_argument("--match-dir", type=Path, required=True, help="directory of the match files")
+    stats.add_argument("--match-id", help="default: name of the match directory")
+    stats.add_argument("--db", type=Path, help="database file (default: aicoach.db in the dir)")
+    stats.add_argument("--from", dest="start", required=True, help="window start, video mm:ss")
+    stats.add_argument("--to", dest="end", required=True, help="window end, video mm:ss")
+
+    rev = commands.add_parser(
+        "review-eval",
+        help="Recall of events + candidates per half and class, section of docs/metrics.md",
+    )
+    rev.add_argument("--match-dir", type=Path, required=True, help="directory of the match files")
+    rev.add_argument(
+        "--ground-truth", type=Path, default=DEFAULT_GROUND_TRUTH, help="default: %(default)s"
+    )
+    rev.add_argument("--model-db", default="aicoach_model.db", help="in the match dir")
+    rev.add_argument("--tdeed", required=True, help="T-DEED JSON file name in the match dir")
+    rev.add_argument("--output", type=Path, default=Path("docs") / "metrics.md")
     return parser
 
 
@@ -526,6 +561,55 @@ def _final_eval(args: argparse.Namespace) -> int:
     return 0
 
 
+def _review_candidates(args: argparse.Namespace) -> int:
+    match_dir: Path = args.match_dir
+    predictions = args.predictions or find_tdeed_file(match_dir)
+    if predictions is None:
+        msg = f"no T-DEED file (tdeed_*.json) in {match_dir}: give --predictions"
+        raise ConfigError(msg)
+    result = run_review_candidates(
+        match_dir, args.match_id or match_dir.resolve().name, predictions, force=args.force
+    )
+    counts = ", ".join(
+        f"{kind} {sum(by_half.values())} (1st half {by_half.get('1', 0)}, "
+        f"2nd half {by_half.get('2', 0)})"
+        for kind, by_half in sorted(result.counts.items())
+    )
+    sys.stdout.write(
+        f"review_candidates.json: {counts or 'no candidates'}; "
+        f"{result.n_model} shot detections, {result.n_existing} near an event, "
+        f"{result.n_merged} merged, {result.n_outside_halves} outside the halves\n"
+    )
+    return 0
+
+
+def _review_stats(args: argparse.Namespace) -> int:
+    match_dir: Path = args.match_dir
+    start, end = parse_window(args.start, args.end)
+    stats = run_review_stats(
+        match_dir,
+        args.match_id or match_dir.resolve().name,
+        args.db or match_dir / DB_FILE,
+        start,
+        end,
+    )
+    sys.stdout.write(format_stats(stats))
+    return 0
+
+
+def _review_eval(args: argparse.Namespace) -> int:
+    match_dir: Path = args.match_dir
+    paths = ReviewEvalPaths(
+        match_dir=match_dir,
+        ground_truth=args.ground_truth,
+        model_db=match_dir / args.model_db,
+        tdeed=match_dir / args.tdeed,
+    )
+    run_review_eval(paths, args.output)
+    sys.stdout.write(f"result: {args.output}\n")
+    return 0
+
+
 def _ui(args: argparse.Namespace) -> int:
     """Run the Streamlit viewer; its exit code is ours. The video id stays in the arguments."""
     if (args.video is None) != (args.youtube_id is None):
@@ -684,6 +768,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _spotting_eval(args)
         if args.command == "final-eval":
             return _final_eval(args)
+        if args.command == "review-candidates":
+            return _review_candidates(args)
+        if args.command == "review-stats":
+            return _review_stats(args)
+        if args.command == "review-eval":
+            return _review_eval(args)
         if args.command == "fuse":
             return _fuse(args)
         if args.command == "run":

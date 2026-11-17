@@ -119,18 +119,26 @@ def plan_delete(event: CurrentEvent) -> EditPlan:
     return EditPlan("delete", message, target=event.event_id)
 
 
+def plan_add_at(event_type: EventType, t_v: float, bounds: TimeBounds) -> EditPlan:
+    """A new event of the given category at an exact video time (a candidate of the review).
+
+    Raises:
+        EditInputError: The time is outside the halves or past the end.
+    """
+    half = check_time(t_v, bounds)
+    message = ru.EDIT_ADDED.format(
+        type=ru.TYPE_LABELS[event_type], time=format_mmss(t_v), half=half
+    )
+    return EditPlan("add", message, type=event_type, t_v=t_v)
+
+
 def plan_add(event_type: EventType, text: str, bounds: TimeBounds) -> EditPlan:
     """A new event of the given category at the time typed as `mm:ss`.
 
     Raises:
         EditInputError: Bad format, time outside the halves or past the end.
     """
-    t_v = parse_mmss(text)
-    half = check_time(t_v, bounds)
-    message = ru.EDIT_ADDED.format(
-        type=ru.TYPE_LABELS[event_type], time=format_mmss(t_v), half=half
-    )
-    return EditPlan("add", message, type=event_type, t_v=t_v)
+    return plan_add_at(event_type, parse_mmss(text), bounds)
 
 
 def with_derived_half(event: CurrentEvent, bounds: TimeBounds | None) -> CurrentEvent:

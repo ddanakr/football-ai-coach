@@ -21,6 +21,8 @@ from aicoach.plate_names.stage import run_plate_names
 from aicoach.plates.config import PlatesConfig
 from aicoach.plates.schemas import PlatesResult
 from aicoach.plates.stage import run_plates
+from aicoach.review.schemas import ReviewCandidatesResult
+from aicoach.review.stage import run_review_candidates
 from aicoach.scoreboard.config import ScoreboardConfig
 from aicoach.scoreboard.schemas import ScoreboardResult
 from aicoach.scoreboard.stage import run_scoreboard
@@ -38,7 +40,7 @@ _T = TypeVar("_T")
 @dataclass(frozen=True)
 class Stages:
     """The stage functions; the real ones by default, fakes in tests (`run` uses three of them,
-    `ingest` also `plate_names` and `transcribe`).
+    `ingest` also `plate_names`, `transcribe` and `review_candidates`).
 
     Typed as `Callable[..., X]` on purpose: the stages take different arguments and the
     pipeline calls them by keyword, so a precise type would only repeat their signatures.
@@ -49,6 +51,7 @@ class Stages:
     fusion: Callable[..., CandidatesResult] = run_fuse
     plate_names: Callable[..., PlateNamesResult | None] = run_plate_names
     transcribe: Callable[..., TranscriptResult | None] = run_transcribe
+    review_candidates: Callable[..., ReviewCandidatesResult] = run_review_candidates
 
 
 @dataclass(frozen=True)
