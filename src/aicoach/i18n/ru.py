@@ -120,6 +120,14 @@ MISSING_GEMINI_KEY = (
     "Ключ GEMINI_API_KEY не задан ни в переменной окружения, ни в файле .env в корне "
     "репозитория: скопируйте .env.example в .env и впишите ключ."
 )
+MISSING_OPENROUTER_KEY = (
+    "Ключ OPENROUTER_API_KEY не задан ни в переменной окружения, ни в файле .env в корне "
+    "репозитория: впишите ключ в .env (или выберите другой поставщик: --provider gemini)."
+)
+BUDGET_EXCEEDED = (
+    "Бюджет месяца исчерпан: потрачено {spent:.4f} USD, оценка запроса {estimate:.4f} USD, "
+    "потолок {budget:.2f} USD (AICOACH_BUDGET_USD). Запрос не отправлен."
+)
 UNREADABLE_ENV_FILE = (
     "Файл .env не читается (права доступа или не UTF-8); исправьте или удалите его, "
     "шаблон лежит в .env.example."

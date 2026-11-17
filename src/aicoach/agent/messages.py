@@ -33,14 +33,27 @@ class ToolResult:
 
 @dataclass(frozen=True)
 class Usage:
-    """Tokens of one request; thinking tokens are counted as output (they are billed so)."""
+    """Tokens of one request; thinking tokens are counted as output (they are billed so).
+
+    `cost_usd` is what the service itself charged (OpenRouter reports it in every response);
+    `None` when the service does not say. Sums keep a cost only when no part lacks one.
+    """
 
     input_tokens: int = 0
     output_tokens: int = 0
+    cost_usd: float | None = None
 
     def __add__(self, other: "Usage") -> "Usage":
+        # An empty `Usage()` is the start of a sum: its missing cost must not hide the other's.
+        if self == Usage():
+            return other
+        if other == Usage():
+            return self
+        cost = None
+        if self.cost_usd is not None and other.cost_usd is not None:
+            cost = self.cost_usd + other.cost_usd
         return Usage(
-            self.input_tokens + other.input_tokens, self.output_tokens + other.output_tokens
+            self.input_tokens + other.input_tokens, self.output_tokens + other.output_tokens, cost
         )
 
 

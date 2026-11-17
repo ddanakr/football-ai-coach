@@ -47,3 +47,7 @@ class ExternalServiceError(AicoachError):
 
 class TranscriptionError(AicoachError):
     """Speech transcription input or output is unusable: a bad fragment file or a bad answer."""
+
+
+class BudgetExceededError(AicoachError):
+    """A paid request was not sent: the month's spending plus its estimate would pass the budget."""

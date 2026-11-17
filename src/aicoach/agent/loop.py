@@ -25,11 +25,11 @@ from aicoach.agent.messages import (
     Usage,
     UserMessage,
 )
-from aicoach.agent.pricing import cost_usd
+from aicoach.agent.pricing import cost_of
 from aicoach.agent.render import Segment, count_links, plain_text, render_answer
 from aicoach.agent.tools import ClipMade, ToolBox
 from aicoach.agent.validator import Violation, describe, find_violations, numbers_in
-from aicoach.errors import ExternalServiceError, StorageError
+from aicoach.errors import BudgetExceededError, ExternalServiceError, StorageError
 from aicoach.i18n import ru
 
 logger = structlog.get_logger()
@@ -133,13 +133,14 @@ class Agent:
 
         Raises:
             ExternalServiceError: The model service failed for good; the journal records it.
+            BudgetExceededError: The month's budget does not allow the request (same journal).
             StorageError: The journal cannot be written.
         """
         started = self._clock()
         run = _Run([UserMessage(question)])
         try:
             text, outcome = self._converse(run, box)
-        except ExternalServiceError:
+        except (ExternalServiceError, BudgetExceededError):
             self._journal_quietly(question, run, self._duration_ms(started), "error")
             raise
         if outcome == "refused":
@@ -160,7 +161,7 @@ class Agent:
             model=self._llm.model,
             violations=run.codes,
             clips=[] if outcome == "refused" else list(box.clips),
-            cost_usd=cost_usd(self._llm.model, run.usage),
+            cost_usd=cost_of(self._llm.model, run.usage),
         )
         logger.info(
             "agent_answered",
@@ -254,6 +255,6 @@ class Agent:
                 validator=outcome,
                 violations=run.codes,
                 n_links=n_links,
-                cost_usd=cost_usd(self._llm.model, run.usage),
+                cost_usd=cost_of(self._llm.model, run.usage),
             ),
         )

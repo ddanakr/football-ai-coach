@@ -18,7 +18,7 @@ from aicoach.errors import TranscriptionError
 from aicoach.plate_names.lineup import load_lineup
 from aicoach.speech.audio import AUDIO_MIME, cut_audio
 from aicoach.speech.check_file import CheckFragment
-from aicoach.speech.metrics import Coverage, coverage
+from aicoach.speech.metrics import Coverage, Gap, coverage, time_gaps
 from aicoach.speech.segments import Segment, build_segments, language_shares
 from aicoach.speech.transcriber import Transcriber
 from aicoach.stage_common import write_atomic
@@ -42,6 +42,8 @@ class FragmentRun:
     seconds: float
     input_tokens: int
     output_tokens: int
+    cost_usd: float | None = None  # what the service charged, when it says
+    gaps: tuple[Gap, ...] = ()  # stretches of 15 s and more without a segment (timed mode)
 
     @property
     def shares(self) -> dict[str, float]:
@@ -88,8 +90,14 @@ def run_to_json(run: FragmentRun, model: str) -> str:
         "seconds": round(run.seconds, 2),
         "input_tokens": run.input_tokens,
         "output_tokens": run.output_tokens,
+        "cost_usd": run.cost_usd,
+        "gaps": [_gap_json(g) for g in run.gaps],
     }
     return json.dumps(doc, ensure_ascii=False, indent=2) + "\n"
+
+
+def _gap_json(gap: Gap) -> dict[str, float]:
+    return {"start_s": round(gap.start_s, 1), "end_s": round(gap.end_s, 1)}
 
 
 def _one_run(
@@ -99,9 +107,13 @@ def _one_run(
     vocabulary: Sequence[str] | None,
 ) -> FragmentRun:
     started = time.perf_counter()
-    raw = transcriber.transcribe(audio, AUDIO_MIME, vocabulary=vocabulary)
+    raw = transcriber.transcribe(
+        audio, AUDIO_MIME, vocabulary=vocabulary, duration_s=fragment.length_s
+    )
     seconds = time.perf_counter() - started
     segments = build_segments(list(raw.words), fragment.start_s)
+    # Gaps only mean something where the model gave times (the vocabulary mode gives none).
+    gaps = time_gaps(segments, fragment.length_s) if vocabulary is None else []
     return FragmentRun(
         fragment,
         "timed" if vocabulary is None else "vocabulary",
@@ -111,6 +123,8 @@ def _one_run(
         seconds,
         raw.input_tokens,
         raw.output_tokens,
+        raw.cost_usd,
+        tuple(gaps),
     )
 
 
@@ -177,6 +191,8 @@ def summary_to_json(runs: Sequence[FragmentRun], model: str) -> str:
             "seconds": round(r.seconds, 2),
             "input_tokens": r.input_tokens,
             "output_tokens": r.output_tokens,
+            "cost_usd": r.cost_usd,
+            "gaps": [_gap_json(g) for g in r.gaps],
         }
         for r in runs
     ]
@@ -189,13 +205,17 @@ def format_summary(runs: Sequence[FragmentRun]) -> str:
     for r in runs:
         frag = r.fragment
         shares = ", ".join(f"{k} {v:.0%}" for k, v in r.shares.items()) or "-"
+        cost = "n/a" if r.cost_usd is None else f"{r.cost_usd:.5f}"
         lines.append(
             f"fragment {frag.index} ({frag.language}, {frag.length_s:.0f} s) {r.mode}: "
             f"found {r.coverage.found}/{r.coverage.total} ({_share_text(r.coverage.share)}); "
             f"segment languages: {shares}; {r.seconds:.1f} s; "
-            f"tokens in {r.input_tokens}, out {r.output_tokens}"
+            f"tokens in {r.input_tokens}, out {r.output_tokens}; cost USD {cost}"
         )
         lines.append(f"  missing: {', '.join(r.coverage.missing) or '-'}")
+        if r.gaps:
+            shown = ", ".join(f"{g.start_s:.0f}-{g.end_s:.0f} s" for g in r.gaps)
+            lines.append(f"  no segments for 15 s and more: {shown}")
     return "\n".join(lines) + "\n"
 
 

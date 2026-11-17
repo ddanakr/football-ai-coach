@@ -34,12 +34,18 @@ MAX_VOCABULARY = 100  # "best results at about 100 terms" (docs)
 
 @dataclass(frozen=True)
 class RawTranscript:
-    """What the model returned: the text, timed words (empty in vocabulary mode), token counts."""
+    """What the model returned: the text, timed words (empty in vocabulary mode), token counts.
+
+    `audio_seconds` and `cost_usd` are what the service itself reported (OpenRouter does, the
+    direct Gemini API does not): `None` when unknown.
+    """
 
     text: str
     words: tuple[TimedWord, ...]
     input_tokens: int
     output_tokens: int
+    audio_seconds: float | None = None
+    cost_usd: float | None = None
 
 
 class Transcriber(Protocol):
@@ -51,10 +57,16 @@ class Transcriber(Protocol):
         ...
 
     def transcribe(
-        self, audio: bytes, mime_type: str, *, vocabulary: Sequence[str] | None = None
+        self,
+        audio: bytes,
+        mime_type: str,
+        *,
+        vocabulary: Sequence[str] | None = None,
+        duration_s: float | None = None,
     ) -> RawTranscript:
         """Transcribe `audio`. Without `vocabulary`: timed words with speakers. With it: text
-        only, the terms are hints.
+        only, the terms are hints. `duration_s` is the length of the sound when the caller knows
+        it (the spending estimate uses it; the model does not).
 
         Raises:
             ExternalServiceError: The service failed for good.
@@ -161,7 +173,12 @@ class GeminiTranscriber:
         return self._model
 
     def transcribe(
-        self, audio: bytes, mime_type: str, *, vocabulary: Sequence[str] | None = None
+        self,
+        audio: bytes,
+        mime_type: str,
+        *,
+        vocabulary: Sequence[str] | None = None,
+        duration_s: float | None = None,  # noqa: ARG002 - part of the `Transcriber` contract
     ) -> RawTranscript:
         """See `Transcriber.transcribe`; retries 429 and 5xx with growing pauses."""
         data = base64.b64encode(audio).decode("ascii")

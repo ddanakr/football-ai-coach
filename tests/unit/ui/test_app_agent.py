@@ -26,13 +26,14 @@ def goal_id(db: Path) -> str:
 
 
 def start(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, llm: FakeLLM | None) -> AppTest:
-    """Run the page over a synthetic match; `llm` None means no Gemini key is set."""
+    """Run the page over a synthetic match; `llm` None means no key is set."""
     db = tmp_path / "aicoach.db"
     args = AppArgs(db=db, match_id=MATCH, youtube_id=VID, match_dir=tmp_path)
     monkeypatch.setattr("sys.argv", [str(app_script()), *build_streamlit_command(args)[6:]])
     if llm is not None:
-        monkeypatch.setattr("aicoach.ui.agent_panel.gemini_client", lambda _settings: llm)
-        monkeypatch.setenv("GEMINI_API_KEY", "key-for-the-fake-client")
+        monkeypatch.setattr(
+            "aicoach.ui.agent_panel.make_llm", lambda _settings, _dir, _model=None: llm
+        )
     return AppTest.from_file(str(app_script()), default_timeout=20).run()
 
 
@@ -44,7 +45,7 @@ def test_without_a_key_the_panel_explains_and_the_question_box_is_off(
     app = start(monkeypatch, tmp_path, None)
 
     assert not app.exception
-    assert any("GEMINI_API_KEY" in w.value for w in app.caption)
+    assert any("OPENROUTER_API_KEY" in w.value for w in app.caption)
     assert app.chat_input[0].disabled
 
 

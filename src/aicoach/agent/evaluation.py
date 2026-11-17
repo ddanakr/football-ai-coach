@@ -15,7 +15,7 @@ import structlog
 from aicoach.agent.loop import Agent, AgentAnswer
 from aicoach.agent.render import plain_text
 from aicoach.agent.tools import ToolBox
-from aicoach.errors import AicoachError, EvalError, ExternalServiceError
+from aicoach.errors import AicoachError, BudgetExceededError, EvalError, ExternalServiceError
 from aicoach.stage_common import write_atomic
 
 ANSWERS_FILE = "answers.csv"
@@ -189,10 +189,11 @@ def run_questions(
 
     A service failure on one question is recorded in its row and the run goes on; after
     `MAX_CONSECUTIVE_ERRORS` failures in a row the run stops with `ExternalServiceError`, the rows
-    so far are written.
+    so far are written. An exhausted budget stops the run at once.
 
     Raises:
         ExternalServiceError: The service kept failing.
+        BudgetExceededError: The month's budget does not allow the next request.
         StorageError: A file cannot be written.
     """
     rows: list[EvalRow] = []
@@ -206,7 +207,8 @@ def run_questions(
             logger.warning("agent_eval_error", stage="agent", question=question.id, error=str(err))
             rows.append(EvalRow(question, None, str(err)))
             streak = streak + 1 if isinstance(err, ExternalServiceError) else 0
-            if streak >= MAX_CONSECUTIVE_ERRORS:
+            # The budget does not come back within the run: every next question would fail too.
+            if streak >= MAX_CONSECUTIVE_ERRORS or isinstance(err, BudgetExceededError):
                 failure = err
                 break
         else:
@@ -232,6 +234,6 @@ def format_summary(summary: EvalSummary) -> str:
         f"event links in the answers: {summary.links}",
         f"tokens: {summary.tokens_in} in, {summary.tokens_out} out",
         f"time in the agent: {summary.seconds:.1f} s",
-        f"estimated cost at paid-tier prices, USD: {cost}",
+        f"cost, USD (as charged by the service, else estimated at table prices): {cost}",
     ]
     return "\n".join(lines) + "\n"

@@ -20,7 +20,7 @@ from aicoach.agent.loop import Agent
 from aicoach.agent.messages import ModelTurn
 from aicoach.agent.render import EventRef, count_links, plain_text, render_answer
 from aicoach.agent.tools import ToolBox
-from aicoach.errors import EvalError, ExternalServiceError, StorageError
+from aicoach.errors import BudgetExceededError, EvalError, ExternalServiceError, StorageError
 from tests.fixtures.agent_synth import FakeLLM, make_context, turn
 
 GOALS = ("query_events", {"type": "goal"})
@@ -263,3 +263,21 @@ def test_answers_csv_does_not_hand_a_formula_to_the_spreadsheet(
 
     rows = list(csv.DictReader(io.StringIO((tmp_path / "answers.csv").read_text("utf-8-sig"))))
     assert rows[0]["answer"] == "'" + answer
+
+
+@pytest.mark.unit
+def test_run_questions_stops_at_once_when_the_budget_is_exhausted(tmp_path: Path) -> None:
+    questions = ["1,a,Первый?\n", "2,a,Второй?\n", "3,a,Третий?\n"]
+    path = write_questions(tmp_path, "id,type,question\n" + "".join(questions))
+    llm = FakeLLM([turn("Не знаю."), BudgetExceededError("Бюджет месяца исчерпан")])
+
+    with pytest.raises(BudgetExceededError, match="Бюджет"):
+        run_questions(
+            Agent(llm, "s"),
+            read_questions(path),
+            lambda: ToolBox(make_context()),
+            tmp_path / "answers.csv",
+        )
+
+    rows = list(csv.DictReader(io.StringIO((tmp_path / "answers.csv").read_text("utf-8-sig"))))
+    assert [r["validator"] for r in rows] == ["first_try", "error"]  # the third was not asked

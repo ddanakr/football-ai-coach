@@ -1,7 +1,7 @@
 """Project settings in one place (D-057, D-060).
 
 Priority, highest first: CLI flag, environment variable, `.env` in the repository root, default
-(the usual order for Docker and CI). Only the five settings below live here. Thresholds, clip
+(the usual order for Docker and CI). Only the eight settings below live here. Thresholds, clip
 windows, limits and prices stay in the code of their modules and are not read from `.env`.
 
 The process environment is never changed: `pydantic-settings` reads `.env` into the settings
@@ -10,8 +10,9 @@ The key is a `SecretStr`: repr and str hide it, and it is never logged or put in
 """
 
 from pathlib import Path
+from typing import Literal
 
-from pydantic import SecretStr, field_validator
+from pydantic import Field, SecretStr, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from aicoach.errors import ConfigError
@@ -23,6 +24,14 @@ DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
 # The speech-to-text model: Stable, with a free tier, word timestamps and speaker labels (models
 # and pricing pages of the Gemini API docs, checked 2026-11-16).
 DEFAULT_TRANSCRIBE_MODEL = "gemini-3.5-transcribe"
+
+# Paid requests go through OpenRouter (D-068). Both slugs were found in the OpenRouter model list
+# (https://openrouter.ai/api/v1/models, checked 2026-11-17): a Flash-lite model with function
+# calling, and the Gemini speech-to-text model (the OpenRouter route of `DEFAULT_TRANSCRIBE_MODEL`).
+DEFAULT_OPENROUTER_MODEL = "google/gemini-3.5-flash-lite"
+DEFAULT_OPENROUTER_TRANSCRIBE_MODEL = "google/gemini-3.5-transcribe"
+
+Provider = Literal["openrouter", "gemini"]
 
 # src/aicoach/config.py -> repository root.
 DEFAULT_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
@@ -47,14 +56,33 @@ class Settings(BaseSettings):
     gemini_api_key: SecretStr | None = None
     gemini_model: str = DEFAULT_GEMINI_MODEL
     gemini_transcribe_model: str = DEFAULT_TRANSCRIBE_MODEL
+    openrouter_api_key: SecretStr | None = None
+    aicoach_llm_provider: Provider = "openrouter"
+    # The monthly ceiling of paid requests, US dollars; not set means no ceiling (D-067).
+    aicoach_budget_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     aicoach_data_root: Path | None = None
     tesseract_cmd: Path | None = None
 
-    @field_validator("gemini_api_key", "aicoach_data_root", "tesseract_cmd", mode="before")
+    @field_validator(
+        "gemini_api_key",
+        "openrouter_api_key",
+        "aicoach_budget_usd",
+        "aicoach_data_root",
+        "tesseract_cmd",
+        mode="before",
+    )
     @classmethod
     def _blank_is_unset(cls, value: object) -> object:
         """Whitespace only means not set."""
         return (value.strip() or None) if isinstance(value, str) else value
+
+    @field_validator("aicoach_llm_provider", mode="before")
+    @classmethod
+    def _blank_provider_is_default(cls, value: object) -> object:
+        """Whitespace only means the default provider; the case does not matter."""
+        if isinstance(value, str):
+            return value.strip().lower() or "openrouter"
+        return value
 
     @field_validator("gemini_model", mode="after")
     @classmethod
@@ -76,12 +104,23 @@ class Settings(BaseSettings):
             raise ConfigError(ru.MISSING_GEMINI_KEY)
         return self.gemini_api_key
 
+    def require_openrouter_api_key(self) -> SecretStr:
+        """The OpenRouter key.
+
+        Raises:
+            ConfigError: No key is set. The message names no file content and no value.
+        """
+        if self.openrouter_api_key is None:
+            raise ConfigError(ru.MISSING_OPENROUTER_KEY)
+        return self.openrouter_api_key
+
 
 def load_settings(
     *,
     env_file: Path | None = None,
     data_root: Path | None = None,
     gemini_model: str | None = None,
+    llm_provider: str | None = None,
 ) -> Settings:
     """Settings from the environment and `.env`; given arguments (CLI flags) win over both.
 
@@ -90,16 +129,20 @@ def load_settings(
             fine: the environment and the defaults still apply).
         data_root: CLI value for `AICOACH_DATA_ROOT`; `None` leaves the lower sources in charge.
         gemini_model: CLI value for `GEMINI_MODEL`; `None` or blank leaves them in charge.
+        llm_provider: CLI value for `AICOACH_LLM_PROVIDER` (`--provider`); `None` or blank
+            leaves the lower sources in charge.
 
     Raises:
-        ConfigError: `.env` cannot be read (encoding, permissions). The message never quotes
-            the content.
+        ConfigError: `.env` cannot be read (encoding, permissions), or a value is invalid (the
+            message names the setting, never the value).
     """
     given: dict[str, Path | str] = {}
     if data_root is not None:
         given["aicoach_data_root"] = data_root
     if gemini_model is not None and gemini_model.strip():
         given["gemini_model"] = gemini_model
+    if llm_provider is not None and llm_provider.strip():
+        given["aicoach_llm_provider"] = llm_provider
     try:
         # `_env_file` is the documented per-instance way to choose the file; mypy does not see it
         # in the synthesized signature, nor the field values passed as a mapping.
@@ -107,6 +150,11 @@ def load_settings(
     except (OSError, UnicodeDecodeError) as err:
         # The OS and codec messages carry the path or a byte offset, never the content.
         raise ConfigError(ru.UNREADABLE_ENV_FILE) from err
+    except ValidationError as err:
+        # Only the name of the setting: the invalid value may be a secret typed in a wrong place.
+        names = ", ".join(sorted({str(e["loc"][0]).upper() for e in err.errors() if e["loc"]}))
+        msg = f"invalid value of {names}"
+        raise ConfigError(msg) from err
 
 
 def read_gemini_api_key(settings: Settings | None = None) -> SecretStr:

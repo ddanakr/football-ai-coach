@@ -7,9 +7,12 @@ from pathlib import Path
 from aicoach.agent.context import load_context
 from aicoach.agent.llm import GeminiClient, LLMClient
 from aicoach.agent.loop import Agent, load_system_prompt
+from aicoach.agent.openrouter_llm import OpenRouterClient
 from aicoach.agent.tools import ClipMaker, ToolBox
 from aicoach.clips import export_event_clip
-from aicoach.config import Settings
+from aicoach.config import DEFAULT_OPENROUTER_MODEL, Settings
+from aicoach.openrouter import OpenRouterHttp
+from aicoach.spend import MeteredLLM, SpendLedger, ledger_path
 
 
 @dataclass(frozen=True)
@@ -28,6 +31,38 @@ def gemini_client(settings: Settings) -> GeminiClient:
         ConfigError: No key is set.
     """
     return GeminiClient(settings.require_gemini_api_key(), settings.gemini_model)
+
+
+def openrouter_client(settings: Settings, model: str | None = None) -> OpenRouterClient:
+    """The OpenRouter client for the key of the settings and `model` (default: the Flash-lite
+    slug of `config.py`).
+
+    Raises:
+        ConfigError: No key is set.
+    """
+    http = OpenRouterHttp(settings.require_openrouter_api_key())
+    return OpenRouterClient(http, model or DEFAULT_OPENROUTER_MODEL)
+
+
+def make_llm(settings: Settings, match_dir: Path, model: str | None = None) -> LLMClient:
+    """The client of the provider in the settings, wrapped in the spending ledger and the budget.
+
+    Args:
+        settings: Provider (`AICOACH_LLM_PROVIDER` or `--provider`), keys, budget, data root.
+        match_dir: The match directory (the ledger goes to the data root, or above this one).
+        model: The model; the default of the provider when `None` (for Gemini `GEMINI_MODEL`).
+
+    Raises:
+        ConfigError: The key of the chosen provider is not set.
+    """
+    provider = settings.aicoach_llm_provider
+    inner: LLMClient
+    if provider == "gemini":
+        inner = GeminiClient(settings.require_gemini_api_key(), model or settings.gemini_model)
+    else:
+        inner = openrouter_client(settings, model)
+    ledger = SpendLedger(ledger_path(settings, match_dir), settings.aicoach_budget_usd)
+    return MeteredLLM(inner, ledger, provider)
 
 
 def build_runtime(
