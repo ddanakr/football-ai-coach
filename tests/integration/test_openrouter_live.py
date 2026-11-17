@@ -12,7 +12,7 @@ import pytest
 
 from aicoach.agent.messages import ToolSpec, UserMessage
 from aicoach.agent.openrouter_llm import OpenRouterClient
-from aicoach.config import DEFAULT_OPENROUTER_MODEL, load_settings
+from aicoach.config import DEFAULT_AGENT_MODEL, load_settings
 from aicoach.openrouter import OpenRouterHttp
 from aicoach.speech.audio import AUDIO_MIME, cut_audio
 from aicoach.speech.openrouter_stt import OpenRouterTranscriber
@@ -32,7 +32,7 @@ LIVE = pytest.mark.skipif(
 def test_real_model_calls_a_tool_and_reports_its_cost(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.undo()  # the real settings, not the isolated ones
     key = load_settings().require_openrouter_api_key()
-    client = OpenRouterClient(OpenRouterHttp(key), DEFAULT_OPENROUTER_MODEL)
+    client = OpenRouterClient(OpenRouterHttp(key), DEFAULT_AGENT_MODEL)
     spec = ToolSpec("count_goals", "Число голов в матче.", {"type": "object", "properties": {}})
 
     turn = client.generate(

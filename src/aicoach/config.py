@@ -1,7 +1,7 @@
 """Project settings in one place (D-057, D-060).
 
 Priority, highest first: CLI flag, environment variable, `.env` in the repository root, default
-(the usual order for Docker and CI). Only the eight settings below live here. Thresholds, clip
+(the usual order for Docker and CI). Only the settings below live here. Thresholds, clip
 windows, limits and prices stay in the code of their modules and are not read from `.env`.
 
 The process environment is never changed: `pydantic-settings` reads `.env` into the settings
@@ -26,9 +26,10 @@ DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
 DEFAULT_TRANSCRIBE_MODEL = "gemini-3.5-transcribe"
 
 # Paid requests go through OpenRouter (D-068). Both slugs were found in the OpenRouter model list
-# (https://openrouter.ai/api/v1/models, checked 2026-11-17): a Flash-lite model with function
-# calling, and the Gemini speech-to-text model (the OpenRouter route of `DEFAULT_TRANSCRIBE_MODEL`).
-DEFAULT_OPENROUTER_MODEL = "google/gemini-3.5-flash-lite"
+# (https://openrouter.ai/api/v1/models, checked 2026-11-17): the agent model with function calling
+# (D-071: gpt-6-luna answered 22 of 22 questions in the comparison of four models), and the Gemini
+# speech-to-text model (the OpenRouter route of `DEFAULT_TRANSCRIBE_MODEL`).
+DEFAULT_AGENT_MODEL = "openai/gpt-6-luna"
 DEFAULT_OPENROUTER_TRANSCRIBE_MODEL = "google/gemini-3.5-transcribe"
 # The model of the whole-match speech stage (D-070): in the D-069 comparison it found 75 of 77 heard
 # words against 54 of 77 for the Gemini model and gave word times and speakers on every fragment.
@@ -60,6 +61,8 @@ class Settings(BaseSettings):
     gemini_model: str = DEFAULT_GEMINI_MODEL
     gemini_transcribe_model: str = DEFAULT_TRANSCRIBE_MODEL
     openrouter_api_key: SecretStr | None = None
+    # The agent model of the provider openrouter; `GEMINI_MODEL` is for the provider gemini only.
+    aicoach_agent_model: str = DEFAULT_AGENT_MODEL
     aicoach_llm_provider: Provider = "openrouter"
     # The monthly ceiling of paid requests, US dollars; not set means no ceiling (D-067).
     aicoach_budget_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)
@@ -91,6 +94,11 @@ class Settings(BaseSettings):
     @classmethod
     def _blank_model_is_default(cls, value: str) -> str:
         return value.strip() or DEFAULT_GEMINI_MODEL
+
+    @field_validator("aicoach_agent_model", mode="after")
+    @classmethod
+    def _blank_agent_model_is_default(cls, value: str) -> str:
+        return value.strip() or DEFAULT_AGENT_MODEL
 
     @field_validator("gemini_transcribe_model", mode="after")
     @classmethod
