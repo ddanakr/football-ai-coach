@@ -276,3 +276,32 @@ def test_the_complaint_about_a_number_tells_how_to_get_it_from_a_tool() -> None:
     assert "число 9" in text
     assert "total" in text
     assert "total" not in describe(check("Гол на 12:34."))
+
+
+@pytest.mark.unit
+def test_a_hyphenated_word_is_allowed_when_each_part_is_a_returned_word() -> None:
+    assert (
+        find_violations(
+            "Это было в игре Альфа-Бета [E:p:2].",
+            seen_ids=SEEN,
+            existing_ids=EXISTING,
+            allowed_names=NAMES,
+            allowed_numbers=NUMBERS,
+        )
+        == []
+    )
+
+
+@pytest.mark.unit
+def test_a_hyphenated_word_with_an_unknown_part_is_rejected() -> None:
+    assert "unknown_name" in codes("Это было в игре Альфа-Выдумов [E:p:2].")
+
+
+@pytest.mark.unit
+def test_a_hyphenated_word_of_allowed_words_is_not_a_name() -> None:
+    assert codes("Играли в Премьер-Лига [E:p:2].") == []
+
+
+@pytest.mark.unit
+def test_a_hyphenated_word_with_an_allowed_part_and_an_unknown_part_is_rejected() -> None:
+    assert "unknown_name" in codes("Играли в Премьер-Выдумов [E:p:2].")
