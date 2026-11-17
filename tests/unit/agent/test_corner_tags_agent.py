@@ -201,7 +201,9 @@ def test_the_answer_gets_the_mark_from_the_code_when_the_model_forgets_it() -> N
     answer = Agent(llm, "system").ask("Угловые хозяев?", ToolBox(context_with_tags()))
 
     assert answer.outcome == "first_try"
-    assert plain_text(answer.segments).endswith(ru.CORNER_TAGS_ANSWER_MARK)
+    text = plain_text(answer.segments)
+    assert ru.CORNER_TAGS_ANSWER_MARK in text
+    assert text.endswith(ru.CORNER_ZONE_ANSWER_MARK)  # the zone of p:3 was shown too
 
 
 @pytest.mark.unit
@@ -285,3 +287,77 @@ def test_a_manual_override_is_what_the_agent_sees(tmp_path: Path) -> None:
     first = next(f for f in ctx.events if f.event.event_id == "p:3")
     assert first.corner is not None
     assert first.corner.side is None  # white is no longer the home colour
+
+
+@pytest.mark.unit
+def test_an_event_with_tags_marks_the_zone_as_low_reliability_for_the_model() -> None:
+    box = ToolBox(context_with_tags())
+
+    tags = box.call("get_event", {"event_id": "p:3"})["event"]["corner_tags"]
+
+    assert tags["zone_reliability"] == "low"
+    assert "zone" in CORNER_TAGS_NOTE
+    assert "низкой надёжности" in CORNER_TAGS_NOTE
+
+
+@pytest.mark.unit
+def test_the_zone_flag_is_set_by_a_shown_zone_or_a_zone_filter_not_by_an_unclear_zone() -> None:
+    ctx = context_with_tags()
+    events = list(ctx.events)
+    events[2] = replace(events[2], corner=view("home", zone="unclear"))
+    unclear = ToolBox(replace(ctx, events=tuple(events)))
+
+    unclear.call("get_event", {"event_id": "p:3"})
+    assert unclear.corner_tags_shown
+    assert not unclear.zone_shown
+
+    shown = ToolBox(ctx)
+    shown.call("get_event", {"event_id": "p:3"})
+    assert shown.zone_shown
+
+    filtered = ToolBox(ctx)
+    filtered.call("query_events", {"corner_zone": "center"})  # nothing found, still asked
+    assert filtered.zone_shown
+
+
+@pytest.mark.unit
+def test_the_answer_gets_the_zone_caveat_from_the_code_when_the_model_forgets_it() -> None:
+    llm = FakeLLM(
+        [
+            turn("", ("query_events", {"corner_zone": "far_post"})),
+            turn("Мяч полетел на дальнюю штангу, по клипу, не проверено [E:p:3]."),
+        ]
+    )
+
+    answer = Agent(llm, "system").ask("Куда?", ToolBox(context_with_tags()))
+
+    assert plain_text(answer.segments).endswith(ru.CORNER_ZONE_ANSWER_MARK)
+    assert "4 из 8" in ru.CORNER_ZONE_ANSWER_MARK
+
+
+@pytest.mark.unit
+def test_the_zone_caveat_is_not_added_when_the_model_said_it() -> None:
+    llm = FakeLLM(
+        [
+            turn("", ("query_events", {"corner_zone": "far_post"})),
+            turn("Зона дальняя штанга, низкая надёжность, по клипу, не проверено [E:p:3]."),
+        ]
+    )
+
+    answer = Agent(llm, "system").ask("Куда?", ToolBox(context_with_tags()))
+
+    assert ru.CORNER_ZONE_ANSWER_MARK not in plain_text(answer.segments)
+
+
+@pytest.mark.unit
+def test_no_zone_caveat_when_the_zone_did_not_reach_the_model() -> None:
+    llm = FakeLLM(
+        [
+            turn("", ("get_event", {"event_id": "p:9"})),  # a corner without tags
+            turn("Тегов у этого углового нет [E:p:9]."),
+        ]
+    )
+
+    answer = Agent(llm, "system").ask("Что за угловой?", ToolBox(context_with_tags()))
+
+    assert ru.CORNER_ZONE_ANSWER_MARK not in plain_text(answer.segments)

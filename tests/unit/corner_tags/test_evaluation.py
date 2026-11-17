@@ -350,3 +350,38 @@ def test_corner_eval_command_prints_the_halves_and_an_error_exits_with_two(
 
     assert code == 2
     assert "not filled in yet" in capsys.readouterr().err
+
+
+@pytest.mark.unit
+def test_parse_truth_a_row_with_more_cells_than_columns_is_an_error() -> None:
+    with pytest.raises(EvalError, match=r"row 2: more cells than columns"):
+        parse_truth(truth("p:1,1,1,1,yes,white,cross,center,attack,goal,extra"))
+
+
+@pytest.mark.unit
+def test_run_corner_eval_without_final_will_not_erase_the_second_half_table(
+    tmp_path: Path,
+) -> None:
+    match_dir, truth_path = write_files(
+        tmp_path,
+        ["p:1,1,1,1,yes,white,cross,,,", "p:2,2,52,1,yes,red,short,,,"],
+        [tag("p:1", 1, attacking_kit="white"), tag("p:2", 2, attacking_kit="red")],
+    )
+    output = tmp_path / "metrics.md"
+    run_corner_eval(match_dir, truth_path, output, final=True)
+    before = output.read_text(encoding="utf-8")
+
+    with pytest.raises(EvalError, match="already holds the 2nd-half table"):
+        run_corner_eval(match_dir, truth_path, output, final=False)
+
+    assert output.read_text(encoding="utf-8") == before
+    run_corner_eval(match_dir, truth_path, output, final=True)  # --final may replace it
+
+
+@pytest.mark.unit
+def test_parse_truth_a_stray_trailing_comma_is_not_an_error_but_a_real_extra_cell_is() -> None:
+    rows = parse_truth(truth("p:1,1,1,1,yes,white,cross,center,attack,goal,"))
+
+    assert rows[0].values["outcome"] == "goal"
+    with pytest.raises(EvalError, match="more cells than columns"):
+        parse_truth(truth("p:1,1,1,1,yes,white,cross,center,attack,goal,x"))

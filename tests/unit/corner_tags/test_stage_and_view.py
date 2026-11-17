@@ -443,7 +443,7 @@ def test_run_corner_tags_skipped_says_the_real_reason(
         model = None
 
         def no_key(*_args: object, **_kwargs: object) -> object:
-            msg = "no key"
+            msg = "OPENROUTER_API_KEY is not set"
             raise ConfigError(msg)
 
         monkeypatch.setattr("aicoach.corner_tags.stage.make_video_model", no_key)
@@ -458,3 +458,23 @@ def test_run_corner_tags_skipped_says_the_real_reason(
     entry = read_status(s.dir).stages["corner_tags"]
     assert entry.state == "skipped"
     assert word in (entry.error or "")
+
+
+@pytest.mark.unit
+def test_describe_marks_the_zone_as_low_reliability_and_only_the_zone(tmp_path: Path) -> None:
+    result, corners = tagged(tmp_path)
+    views = build_views(result, corners, TEAMS)
+
+    text = describe(views["p:3"], TEAMS)
+
+    assert "зона: ближняя штанга (низкая надёжность)" in text
+    assert text.count("низкая надёжность") == 1
+    assert "(низкая надёжность)" not in text.split("зона")[0]
+
+
+@pytest.mark.unit
+def test_the_zone_filter_label_says_low_reliability() -> None:
+    from aicoach.i18n import ru
+
+    assert "низкая надёжность" in ru.CORNER_FIELD_LABELS["zone"]
+    assert all("надёжность" not in v for k, v in ru.CORNER_FIELD_LABELS.items() if k != "zone")

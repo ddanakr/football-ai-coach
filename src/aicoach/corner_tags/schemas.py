@@ -18,6 +18,7 @@ SCHEMA_VERSION: Final = 1
 UNCLEAR: Final = "unclear"
 
 IS_CORNER: Final = "is_corner"
+ZONE: Final = "zone"
 ATTACKING_KIT: Final = "attacking_kit"
 FIELDS: Final = (IS_CORNER, ATTACKING_KIT, "delivery", "zone", "first_contact", "outcome")
 CHOICES: Final[dict[str, tuple[str, ...]]] = {

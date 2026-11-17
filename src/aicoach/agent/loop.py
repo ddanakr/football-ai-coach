@@ -33,6 +33,7 @@ from aicoach.agent.render import (
     render_answer,
     with_corner_mark,
     with_episode_mark,
+    with_zone_caveat,
 )
 from aicoach.agent.tools import ClipMade, ToolBox
 from aicoach.agent.validator import Violation, describe, find_violations, numbers_in
@@ -158,6 +159,8 @@ class Agent:
                 segments = with_episode_mark(segments)
             if box.corner_tags_shown:
                 segments = with_corner_mark(segments)
+            if box.zone_shown:
+                segments = with_zone_caveat(segments)
         n_links = count_links(segments)
         duration_ms = self._duration_ms(started)
         self._journal(question, run, duration_ms, outcome, n_links)

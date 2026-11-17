@@ -446,3 +446,52 @@ def test_run_teams_a_clip_that_failed_is_tried_again_on_the_next_run(tmp_path: P
 
     assert len(result.votes) == 4
     assert result.home.kit == "white"
+
+
+@pytest.mark.unit
+def test_run_teams_a_new_model_does_not_claim_the_votes_of_the_old_one_in_a_partial_file(
+    tmp_path: Path,
+) -> None:
+    s = Setup(tmp_path)
+    s.run()  # four votes paid for
+    first_model = s.model
+    # A new model asks again for every source; the first answer arrives, the second fails.
+    s.model = FakeVideoModel([kit_reply("white"), ExternalServiceError("502")], model="test/other")
+    with pytest.raises(ExternalServiceError):
+        s.run()
+    assert first_model.requests  # the first run did ask
+
+    partial = read_teams(s.dir)
+    assert partial is not None
+    assert partial.cache_key == "incomplete"
+    # One new vote from the new model; nothing of the old model's votes is claimed for it.
+    assert [v.model for v in partial.votes] == ["test/other"]
+
+
+@pytest.mark.unit
+def test_run_teams_a_partial_file_keeps_the_votes_of_later_sources_from_the_same_model(
+    tmp_path: Path,
+) -> None:
+    s = Setup(tmp_path)
+    first = s.run()
+    # Two home goals moved: the first is asked again and answers, the second fails; the two
+    # votes of the away team, paid for earlier, stay in the saved file.
+    s.db.unlink()
+    from aicoach.domain.events import EventType
+    from tests.fixtures.corner_synth import DEFAULT_SPECS
+
+    moved = [
+        (t, t_v + 3 if t is EventType.GOAL and t_v in (600.0, 4000.0) else t_v, h, team)
+        for t, t_v, h, team in DEFAULT_SPECS
+    ]
+    s.db = write_db(s.dir, moved)
+    s.model = FakeVideoModel([kit_reply("white"), ExternalServiceError("502")])
+
+    with pytest.raises(ExternalServiceError):
+        s.run()
+
+    partial = read_teams(s.dir)
+    assert partial is not None
+    assert len(first.votes) == 4
+    assert sorted(v.side for v in partial.votes) == ["away", "away", "home"]
+    assert partial.cache_key == "incomplete"

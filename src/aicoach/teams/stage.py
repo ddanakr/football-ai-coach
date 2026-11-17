@@ -217,7 +217,14 @@ def _collect_votes(
         else:
             try:
                 votes.append(_ask_vote(source, video, model, config, clipper))
-                save(votes)
+                # The votes of the sources not reached yet that an earlier run paid for stay in
+                # the saved file, so a failure at the next source loses nothing.
+                later = [
+                    kept_later
+                    for s in sources[i + 1 :]
+                    if (kept_later := old.get(_source_key(s, model.model, config)))
+                ]
+                save([*votes, *later])
             except ExportError as err:
                 log.warning(
                     "kit_clip_failed", event_id=source.event.event_id, reason=str(err)[:200]
@@ -322,7 +329,9 @@ def _run(
         notes += vote_notes
         complete = not vote_notes  # a clip that could not be cut is tried again next time
     elif previous is not None:
-        # No key now, but an earlier run paid for votes: keep them and their decision.
+        # No key now, but an earlier run paid for votes: keep them and their decision. The
+        # colour belongs to the team, so votes of events that are gone stay (there may be no
+        # database at all); the next run with a key recounts them against the sources.
         votes, model_name = list(previous.votes), previous.model
     entries, decision_notes = _entries(names, votes, config)
     result = TeamsResult(

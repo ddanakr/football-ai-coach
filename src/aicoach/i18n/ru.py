@@ -401,11 +401,16 @@ TEAMS_SOURCE_LABELS: dict[str, str] = {
 TEAMS_LINE = "{side}: {name} ({name_source}), форма {kit} ({kit_source})"
 
 # Corner tags (D-078): an extension beyond the specification; a model's reading of a clip.
-CORNER_TAGS_SKIPPED = "теги угловых не получены: нет ключа видеомодели (OPENROUTER_API_KEY в .env)"
+CORNER_TAGS_SKIPPED = "теги угловых не получены: {reason}"
 CORNER_TAGS_NO_DB = "теги угловых не получены: базы событий (aicoach.db) ещё нет"
 CORNER_TAGS_NO_VIDEO = "теги угловых не получены: видео матча (src.mp4) не найдено"
 CORNER_UNVERIFIED = "по клипу, не проверено"
 CORNER_TAGS_ANSWER_MARK = "Теги угловых: по клипу, не проверено."
+# The `zone` tag was right in 4 of 8 corners of match01 (docs/metrics.md, D-078).
+CORNER_LOW_RELIABILITY = "низкая надёжность"
+CORNER_ZONE_ANSWER_MARK = (
+    "Поле «куда прилетел мяч» (zone) низкой надёжности: на пилоте совпало 4 из 8."
+)
 CORNER_ATTACKING = "подаёт"
 CORNER_TEAM_UNKNOWN = "команда не определена"
 CORNER_NOT_A_CORNER = "по клипу это не угловой"
@@ -414,7 +419,7 @@ CORNER_FIELD_LABELS: dict[str, str] = {
     "is_corner": "Это угловой",
     "attacking_kit": "Цвет формы подающих",
     "delivery": "Подача",
-    "zone": "Куда прилетел мяч",
+    "zone": "Куда прилетел мяч (низкая надёжность)",
     "first_contact": "Первое касание",
     "outcome": "Чем кончилось",
 }

@@ -15,6 +15,7 @@ from aicoach.corner_tags.schemas import (
     FIELDS,
     IS_CORNER,
     UNCLEAR,
+    ZONE,
     CornerTag,
     CornerTagsFile,
     read_tags_file,
@@ -127,8 +128,10 @@ def describe(view: CornerView, teams: Mapping[Side, EffectiveTeam]) -> str:
         if name in (IS_CORNER, ATTACKING_KIT):
             continue
         code = view.value(name)
-        if code != UNCLEAR:
-            parts.append(f"{ru.CORNER_FIELD_SHORT[name]}: {value_label(name, code)}")
+        if code == UNCLEAR:
+            continue
+        text = f"{ru.CORNER_FIELD_SHORT[name]}: {value_label(name, code)}"
+        parts.append(f"{text} ({ru.CORNER_LOW_RELIABILITY})" if name == ZONE else text)
     return f"{' · '.join(parts)} ({ru.CORNER_UNVERIFIED})"
 
 

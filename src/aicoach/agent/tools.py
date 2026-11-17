@@ -50,7 +50,8 @@ MAX_CLIP_SIDE_S = 60.0
 ACCURACY_NOTE = "Это события, найденные системой автоматически, а не официальная статистика."
 CORNER_TAGS_NOTE = (
     "Теги углового (corner_tags) прочитала видеомодель по клипу: это данные, а не факт, "
-    "не проверено. unclear значит «не видно». Команда подачи определена по цвету формы."
+    "не проверено. unclear значит «не видно». Команда подачи определена по цвету формы. "
+    "Поле zone (куда прилетел мяч) низкой надёжности: так и говори."
 )
 
 ClipMaker = Callable[[str, float, float], Path]
@@ -332,6 +333,7 @@ def corner_tags_json(view: CornerView, team_names: Mapping[str, str]) -> Result:
     tags["attacking_team"] = view.side
     tags["attacking_team_name"] = team_names.get(view.side) if view.side else None
     tags["source"] = "clip_model_unverified"
+    tags["zone_reliability"] = "low"  # the zone was right in half of the corners (D-078)
     return tags
 
 
@@ -408,6 +410,9 @@ class ToolBox:
     episode_described: bool = False
     # Set when corner tags reached the model: the answer must then carry the mark (D-078).
     corner_tags_shown: bool = False
+    # Set when a `zone` value (or a zone filter) reached the model: the answer must then
+    # say that this field is of low reliability (D-078).
+    zone_shown: bool = False
     seen_event_ids: set[str] = field(default_factory=set)
     seen_names: set[str] = field(default_factory=set)
     seen_numbers: set[float] = field(default_factory=set)
@@ -473,6 +478,7 @@ class ToolBox:
         self.seen_names.update(p.name for p in facts.players if p.name)
         if facts.corner is not None:
             self.corner_tags_shown = True
+            self.zone_shown = self.zone_shown or facts.corner.value("zone") != "unclear"
         return event_json(facts, self.ctx.team_names)
 
     def _emit_segment(self, facts: SegmentFacts) -> Result:
@@ -557,6 +563,8 @@ class ToolBox:
             corners = corner_filter(a)
         except CornerFilterError as err:
             return {"error": str(err)}
+        if "zone" in corners.fields:
+            self.zone_shown = True
         # Every filter except the side first: the events whose team is unknown must be counted
         # when the side is asked for, so that "no shots" is not said about "shots of unknown team".
         fitting = [f for f in self.ctx.events if self._passes(f, a, corners)]

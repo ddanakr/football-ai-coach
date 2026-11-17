@@ -17,6 +17,7 @@ from aicoach.corner_tags.evaluation import (
     replace_section,
     rows_of_half,
     score_rows,
+    section_has_half_two,
 )
 from aicoach.corner_tags.schemas import read_tags_file
 from aicoach.errors import EvalError, StorageError
@@ -87,5 +88,12 @@ def run_corner_eval(
     except OSError as err:
         msg = f"cannot read {output}: {err}"
         raise EvalError(msg) from err
+    if not final and section_has_half_two(document):
+        # The 2nd-half check is made once; a run without --final would erase it.
+        msg = (
+            f"{output} already holds the 2nd-half table of the corner section: run with --final "
+            "to replace it, or give another --output"
+        )
+        raise EvalError(msg)
     _write_lf(output, replace_section(document, section))
     return scores

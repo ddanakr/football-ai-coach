@@ -101,7 +101,15 @@ def parse_truth(data: bytes) -> list[TruthRow]:
     rows: list[TruthRow] = []
     seen: set[str] = set()
     for number, raw in enumerate(reader, start=2):
-        row = {(k or "").strip().lower(): (v or "").strip() for k, v in raw.items()}
+        extra = raw.get(None) or []  # cells past the header (a stray comma leaves empty ones)
+        if any(cell.strip() for cell in extra):  # a shifted or broken row
+            msg = f"truth file row {number}: more cells than columns"
+            raise EvalError(msg)
+        row = {
+            k.strip().lower(): (v or "").strip()
+            for k, v in raw.items()
+            if k is not None and isinstance(v, str | None)
+        }
         rows.append(_row(row, number, seen))
     return rows
 
@@ -254,6 +262,14 @@ def render_section(
         parts += [score_table(scores), ""]
     parts.append(END_MARKER)
     return "\n".join(parts)
+
+
+def section_has_half_two(document: str) -> bool:
+    """Whether the corner section of `document` already holds the 2nd-half table."""
+    if BEGIN_MARKER not in document or END_MARKER not in document:
+        return False
+    inside = document.partition(BEGIN_MARKER)[2].partition(END_MARKER)[0]
+    return "### 2-й тайм" in inside
 
 
 def replace_section(document: str, section: str) -> str:

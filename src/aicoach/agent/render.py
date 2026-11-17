@@ -125,6 +125,18 @@ def with_corner_mark(segments: list[Segment]) -> list[Segment]:
     return [*segments, "\n\n", ru.CORNER_TAGS_ANSWER_MARK]
 
 
+_ZONE_CAVEAT = re.compile(r"низк\w*\s+надёжн|низк\w*\s+надежн|надёжн\w*\s+низк|надежн\w*\s+низк")
+
+
+def with_zone_caveat(segments: list[Segment]) -> list[Segment]:
+    """The answer with the remark that the zone tag is of low reliability, added by code when
+    the model did not say so (D-078): the zone was right in 4 of 8 corners."""
+    text = "".join(s for s in segments if isinstance(s, str)).casefold()
+    if _ZONE_CAVEAT.search(text):
+        return segments
+    return [*segments, "\n", ru.CORNER_ZONE_ANSWER_MARK]
+
+
 def count_links(segments: list[Segment]) -> int:
     """How many event links the rendered answer has."""
     return sum(isinstance(s, EventRef) for s in segments)

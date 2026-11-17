@@ -164,7 +164,7 @@ def _run(
             model = make_video_model(settings or load_settings(), match_dir)
         except ConfigError as err:
             log.warning("corner_tags_skipped_no_key", reason=str(err)[:200])
-            return ru.CORNER_TAGS_SKIPPED
+            return ru.CORNER_TAGS_SKIPPED.format(reason=str(err)[:200])
     if corners and not video.is_file():
         log.warning("corner_tags_no_video", path=str(video))
         return ru.CORNER_TAGS_NO_VIDEO
