@@ -56,6 +56,11 @@ def fake(monkeypatch: pytest.MonkeyPatch) -> FakeExport:
     return export
 
 
+def clip_downloads(app: AppTest) -> list[object]:
+    """The download buttons of the clip (the one of the labels is always on the page)."""
+    return [b for b in app.get("download_button") if b.proto.id and "clip" in str(b.key)]
+
+
 def captions(app: AppTest) -> list[str]:
     return [str(c.value) for c in app.caption]
 
@@ -100,11 +105,11 @@ def test_clip_export_shows_clip_and_keeps_it_and_the_selection(
     events = load_events(tmp_path / "aicoach.db", MATCH)
     assert event.event_id == events[1].event_id
     assert len(app.get("video")) == 2  # the player and the clip
-    assert len(app.get("download_button")) == 1
+    assert len(clip_downloads(app)) == 1
     assert any(c.startswith("Клип: ") and "20 с до и 10 с после" in c for c in captions(app))
 
     app.run()  # a rerun (any click elsewhere) keeps the clip and the chosen event
-    assert len(app.get("download_button")) == 1
+    assert len(clip_downloads(app)) == 1
     assert app.session_state["selected_event_id"] == events[1].event_id
     assert len(fake.calls) == 1  # nothing is exported again by a rerun
 
@@ -124,7 +129,7 @@ def test_clip_export_error_is_shown_without_crash(
     assert [e.value for e in app.error] == [
         ru.CLIP_FAILED.format(error="FFmpeg failed (exit code 1): boom")
     ]
-    assert app.get("download_button") == []
+    assert clip_downloads(app) == []
 
 
 @pytest.mark.unit

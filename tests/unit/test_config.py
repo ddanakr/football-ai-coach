@@ -313,3 +313,17 @@ def test_transcribe_model_default_and_overrides(
     monkeypatch.setenv("GEMINI_TRANSCRIBE_MODEL", "  ")
     blank = load_settings(env_file=tmp_path / "none").gemini_transcribe_model
     assert blank == "gemini-3.5-transcribe"
+
+
+@pytest.mark.unit
+def test_font_file_setting_comes_from_the_environment_and_blank_means_not_set(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    path = _env_file(tmp_path, "AICOACH_FONT_FILE=fonts/from-file.ttf\n")
+    assert load_settings(env_file=path).aicoach_font_file == Path("fonts/from-file.ttf")
+
+    monkeypatch.setenv("AICOACH_FONT_FILE", "fonts/from-env.ttf")
+    assert load_settings(env_file=path).aicoach_font_file == Path("fonts/from-env.ttf")
+
+    monkeypatch.setenv("AICOACH_FONT_FILE", "  ")
+    assert load_settings(env_file=_env_file(tmp_path, "")).aicoach_font_file is None

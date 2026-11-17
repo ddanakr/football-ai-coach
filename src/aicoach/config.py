@@ -74,6 +74,8 @@ class Settings(BaseSettings):
     aicoach_budget_usd: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     aicoach_data_root: Path | None = None
     tesseract_cmd: Path | None = None
+    # The font file of the captions of a reel (FR-10); not set means a search in the usual places.
+    aicoach_font_file: Path | None = None
 
     @field_validator(
         "gemini_api_key",
@@ -81,6 +83,7 @@ class Settings(BaseSettings):
         "aicoach_budget_usd",
         "aicoach_data_root",
         "tesseract_cmd",
+        "aicoach_font_file",
         mode="before",
     )
     @classmethod

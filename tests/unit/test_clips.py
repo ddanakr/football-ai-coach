@@ -14,9 +14,11 @@ import structlog
 
 from aicoach.clips import (
     CLIPS_DIR,
+    ClipCaption,
     build_ffmpeg_command,
     clip_filename,
     clip_window,
+    drawtext_filter,
     export_clip,
     find_current_event,
     run_ffmpeg,
@@ -400,3 +402,85 @@ def test_run_ffmpeg_cannot_start_raises_export_error(tmp_path: Path) -> None:
     runner = FakeRunner(raises=PermissionError("access denied"))
     with pytest.raises(ExportError, match="cannot start ffmpeg: access denied"):
         run_ffmpeg(["ffmpeg", str(tmp_path / "x")], 5.0, runner)
+
+
+# --- captions (a reel piece) ---------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_clip_filename_caption_adds_a_hash_that_follows_the_text() -> None:
+    event = make_event(event_id="p:12", type=EventType.GOAL, t_v=200.0)
+    plain = clip_filename(event, 8.0, 12.0)
+
+    one = clip_filename(event, 8.0, 12.0, "Гол · 5'")
+
+    assert one != plain and one.startswith("p12_goal_t200000ms_b8_a12_c") and one.endswith(".mp4")
+    assert one == clip_filename(event, 8.0, 12.0, "Гол · 5'")
+    assert one != clip_filename(event, 8.0, 12.0, "Гол · 6'")
+
+
+@pytest.mark.unit
+def test_drawtext_filter_reads_the_text_from_a_file_and_escapes_the_windows_drive_colon() -> None:
+    caption = ClipCaption("Гол · 5'", Path("C:/Windows/Fonts/arial.ttf"), seconds=2.0)
+
+    chain = drawtext_filter(Path("C:/work/it's/c.mp4.part.txt"), caption)
+
+    assert chain.startswith(r"drawtext=fontfile='C\:/Windows/Fonts/arial.ttf':textfile='C\:/work/")
+    assert r"it'\''s" in chain  # a quote in the path is closed, escaped and reopened
+    assert "Гол" not in chain  # the text itself never goes onto the command line
+    assert chain.endswith(r"enable=lt(t\,2)")
+
+
+@pytest.mark.unit
+def test_build_ffmpeg_command_video_filter_goes_before_the_encoder() -> None:
+    command = build_ffmpeg_command(
+        Path("src.mp4"), Path("o.mp4"), 1.0, 2.0, video_filter="drawtext=x=1"
+    )
+
+    assert command[command.index("-vf") + 1] == "drawtext=x=1"
+    assert command.index("-vf") < command.index("-c:v")
+    assert "-vf" not in build_ffmpeg_command(Path("src.mp4"), Path("o.mp4"), 1.0, 2.0)
+
+
+class CaptionRunner(FakeRunner):
+    """Records the caption file's content while FFmpeg "runs"."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.caption_seen: list[str] = []
+
+    def __call__(self, command: list[str], timeout_s: float) -> subprocess.CompletedProcess[bytes]:
+        chain = command[command.index("-vf") + 1]
+        text_path = chain.split("textfile='")[1].split("':")[0].replace(r"\:", ":")
+        self.caption_seen.append(Path(text_path).read_text(encoding="utf-8"))
+        return super().__call__(command, timeout_s)
+
+
+@pytest.mark.unit
+def test_export_clip_with_caption_writes_the_text_file_for_ffmpeg_and_removes_it(
+    tmp_path: Path,
+) -> None:
+    runner = CaptionRunner()
+    caption = ClipCaption("Гол · 5'", tmp_path / "font.ttf")
+
+    path = export_clip(
+        tmp_path / "src.mp4", make_event(), runner=runner, probe=fake_probe, caption=caption
+    )
+
+    assert runner.caption_seen == ["Гол · 5'"]
+    assert files_in(tmp_path / CLIPS_DIR) == [path.name]  # no .part and no caption file left
+    assert "_c" in path.name
+
+
+@pytest.mark.unit
+def test_export_clip_with_caption_ffmpeg_failure_removes_the_caption_file(tmp_path: Path) -> None:
+    runner = CaptionRunner()
+    runner.returncode = 1
+    caption = ClipCaption("Гол · 5'", tmp_path / "font.ttf")
+
+    with pytest.raises(ExportError):
+        export_clip(
+            tmp_path / "src.mp4", make_event(), runner=runner, probe=fake_probe, caption=caption
+        )
+
+    assert files_in(tmp_path / CLIPS_DIR) == []

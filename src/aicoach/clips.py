@@ -7,10 +7,12 @@ can only start on a key frame, so the clip would start seconds away from the ask
 other stages) and an existing clip is returned without running FFmpeg again.
 """
 
+import hashlib
 import math
 import subprocess
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import structlog
@@ -28,6 +30,27 @@ FFMPEG_TIMEOUT_S = 300.0
 X264_PRESET = "veryfast"
 X264_CRF = "23"
 AAC_BITRATE = "128k"
+# The encoder part of every clip and of a re-encoded reel: the same flags, so the pieces of a
+# reel have the same stream parameters and can be joined without encoding again.
+ENCODE_ARGS = [
+    "-c:v",
+    "libx264",
+    "-preset",
+    X264_PRESET,
+    "-crf",
+    X264_CRF,
+    "-pix_fmt",
+    "yuv420p",
+    "-c:a",
+    "aac",
+    "-b:a",
+    AAC_BITRATE,
+    "-movflags",
+    "+faststart",
+]
+# A reel piece starts with a short caption on the picture (drawtext).
+CAPTION_SECONDS = 2.0
+CAPTION_FONT_HEIGHT_DIVISOR = 14  # font size = frame height / 14
 STDERR_TAIL_LINES = 20
 STDERR_TAIL_CHARS = 2000
 
@@ -91,20 +114,64 @@ def clip_window(
     return start, end
 
 
-def clip_filename(event: CurrentEvent, before_s: float, after_s: float) -> str:
+@dataclass(frozen=True)
+class ClipCaption:
+    """A caption drawn over the first `seconds` of a clip: its text and a font file that has the
+    letters of the text (the Cyrillic ones at least)."""
+
+    text: str
+    font: Path
+    seconds: float = CAPTION_SECONDS
+
+
+def clip_filename(
+    event: CurrentEvent, before_s: float, after_s: float, caption: str | None = None
+) -> str:
     """File name `<id>_<type>_t<ms>ms_b<before>_a<after>.mp4`, e.g. `p12_goal_t200000ms_b8_a12.mp4`.
 
     The id loses its colon (not allowed in Windows file names). The event time in milliseconds
     is part of the name, so a clip made before a user moved the event is not returned for the
-    new time. No team or player names.
+    new time. No team or player names. A captioned clip adds `_c<hash of the caption>`, so it is
+    never taken for the plain clip of the same event, nor for one with another caption.
     """
     event_id = event.event_id.replace(":", "")
     millis = round(event.t_v * 1000)
-    return f"{event_id}_{event.type.value}_t{millis}ms_b{before_s:g}_a{after_s:g}.mp4"
+    mark = (
+        ""
+        if caption is None
+        else f"_c{hashlib.sha1(caption.encode(), usedforsecurity=False).hexdigest()[:8]}"
+    )
+    return f"{event_id}_{event.type.value}_t{millis}ms_b{before_s:g}_a{after_s:g}{mark}.mp4"
+
+
+def _filter_path(path: Path) -> str:
+    """A path as an FFmpeg filter option value: forward slashes, `:` escaped for the option
+    parser (the drive colon of a Windows path would end the option), the whole value quoted for
+    the filter-graph parser (commas, brackets and spaces then need no escaping)."""
+    text = path.as_posix().replace(":", r"\:").replace("'", r"'\''")
+    return f"'{text}'"
+
+
+def drawtext_filter(text_file: Path, caption: ClipCaption) -> str:
+    """The `-vf` chain that draws the caption read from `text_file` on a dark box at the top, for
+    the first `caption.seconds` seconds. The text comes from a file, not from the command line,
+    so quotes, colons and percent signs in it need no escaping."""
+    size = f"h/{CAPTION_FONT_HEIGHT_DIVISOR}"
+    return (
+        f"drawtext=fontfile={_filter_path(caption.font)}:textfile={_filter_path(text_file)}"
+        f":fontcolor=white:fontsize={size}:box=1:boxcolor=black@0.6:boxborderw=14"
+        rf":x=(w-text_w)/2:y=h*0.08:enable=lt(t\,{caption.seconds:g})"
+    )
 
 
 def build_ffmpeg_command(
-    video: Path, output: Path, start_s: float, length_s: float, *, ffmpeg: str = "ffmpeg"
+    video: Path,
+    output: Path,
+    start_s: float,
+    length_s: float,
+    *,
+    ffmpeg: str = "ffmpeg",
+    video_filter: str | None = None,
 ) -> list[str]:
     """FFmpeg arguments that re-encode `length_s` seconds of `video` from `start_s` to `output`.
 
@@ -112,9 +179,10 @@ def build_ffmpeg_command(
     first video stream is required, the first audio stream is optional (`0:a:0?`). The output
     is H.264 4:2:0 (plays in browsers even from a 10-bit source) with AAC sound and the index
     at the front (`+faststart`) for playback while loading. The container is set by `-f mp4`
-    because the output may be a temporary name.
+    because the output may be a temporary name. `video_filter` (an FFmpeg `-vf` chain, used for
+    the captions of a reel) is applied before the encoder; the encoding itself does not change.
     """
-    return [
+    command = [
         ffmpeg,
         "-hide_banner",
         "-nostdin",
@@ -131,24 +199,10 @@ def build_ffmpeg_command(
         "0:v:0",
         "-map",
         "0:a:0?",
-        "-c:v",
-        "libx264",
-        "-preset",
-        X264_PRESET,
-        "-crf",
-        X264_CRF,
-        "-pix_fmt",
-        "yuv420p",
-        "-c:a",
-        "aac",
-        "-b:a",
-        AAC_BITRATE,
-        "-movflags",
-        "+faststart",
-        "-f",
-        "mp4",
-        str(output),
     ]
+    if video_filter is not None:
+        command += ["-vf", video_filter]
+    return [*command, *ENCODE_ARGS, "-f", "mp4", str(output)]
 
 
 def _subprocess_runner(
@@ -231,6 +285,32 @@ def _encode(
         raise ExportError(msg) from err
 
 
+def _encode_captioned(
+    command_for: Callable[[str | None], list[str]],
+    caption: ClipCaption | None,
+    partial: Path,
+    output: Path,
+    timeout_s: float,
+    runner: Runner,
+) -> None:
+    """Like `_encode`, with the caption text put in a file beside `partial` while FFmpeg runs."""
+    if caption is None:
+        _encode(command_for(None), partial, output, timeout_s, runner)
+        return
+    text_file = partial.with_name(partial.name + ".txt")
+    try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        text_file.write_text(caption.text, encoding="utf-8")
+        _encode(
+            command_for(drawtext_filter(text_file, caption)), partial, output, timeout_s, runner
+        )
+    except OSError as err:
+        msg = f"cannot write the caption file {text_file}: {err}"
+        raise ExportError(msg) from err
+    finally:
+        text_file.unlink(missing_ok=True)
+
+
 def export_clip(
     video: Path,
     event: CurrentEvent,
@@ -240,28 +320,35 @@ def export_clip(
     timeout_s: float = FFMPEG_TIMEOUT_S,
     runner: Runner = _subprocess_runner,
     probe: Probe = probe_video,
+    caption: ClipCaption | None = None,
 ) -> Path:
     """Cut the clip of one event into `<video's directory>/clips/` and return its path.
 
     An existing clip with the same name is returned at once: FFmpeg is not run and the video is
     not read. A new clip is written to a temporary name and renamed when FFmpeg has finished, so
-    a failure or a timeout never leaves a half-written clip under the final name.
+    a failure or a timeout never leaves a half-written clip under the final name. With a
+    `caption` the text is drawn over the first seconds (a piece of a reel); the name differs from
+    the plain clip's.
 
     Raises:
         ExportError: The margins are invalid, the video cannot be read, the event lies outside
             it, or FFmpeg failed.
     """
-    output = video.parent / CLIPS_DIR / clip_filename(event, before_s, after_s)
+    name = clip_filename(event, before_s, after_s, None if caption is None else caption.text)
+    output = video.parent / CLIPS_DIR / name
     log = logger.bind(stage="clip", match_id=event.match_id, event_id=event.event_id)
     if output.is_file():
         log.info("clip_cached", path=output.name)
         return output
     start, end = _window_for(event, before_s, after_s, _probe(video, probe))
     partial = output.with_name(output.name + ".part")
-    command = build_ffmpeg_command(video, partial, start, end - start)
+
+    def command_for(video_filter: str | None) -> list[str]:
+        return build_ffmpeg_command(video, partial, start, end - start, video_filter=video_filter)
+
     started = time.perf_counter()
     try:
-        _encode(command, partial, output, timeout_s, runner)
+        _encode_captioned(command_for, caption, partial, output, timeout_s, runner)
     except ExportError as err:
         log.exception("clip_failed", reason=str(err)[:200], duration_ms=elapsed_ms(started))
         raise

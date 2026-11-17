@@ -7,6 +7,7 @@ argument; results are written next to the video (the match directory).
 import argparse
 import subprocess
 import sys
+import time
 from collections.abc import Sequence
 from functools import partial
 from pathlib import Path
@@ -33,6 +34,7 @@ from aicoach.fusion.stage import DB_FILE, run_fuse
 from aicoach.i18n import ru
 from aicoach.ingest.download import VIDEO_FILE
 from aicoach.ingest.stage import EXIT_WAITING_TDEED, IngestTools, find_tdeed_file, run_ingest
+from aicoach.labels_export import DEFAULT_VIDEO_NAME, export_labels, write_labels
 from aicoach.logging_setup import configure_logging
 from aicoach.pipeline import Stages, run_pipeline
 from aicoach.plate_names.lineup import LINEUP_FILE
@@ -40,6 +42,13 @@ from aicoach.plate_names.stage import STAGE as PLATE_NAMES_STAGE
 from aicoach.plate_names.stage import run_plate_names
 from aicoach.plates.config import PlatesConfig
 from aicoach.plates.stage import run_plates
+from aicoach.reel import (
+    DEFAULT_MAX_EVENTS,
+    KINDS,
+    ReelFilter,
+    ReelOptions,
+    export_event_reel,
+)
 from aicoach.review.evaluation import ReviewEvalPaths, run_review_eval
 from aicoach.review.stage import run_review_candidates
 from aicoach.review.stats import format_stats, parse_window, run_review_stats
@@ -183,6 +192,48 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=DEFAULT_AFTER_S,
         help=f"seconds after (default: {DEFAULT_AFTER_S:g})",
+    )
+
+    reel = commands.add_parser(
+        "reel", help="join all events of one category into one captioned video (FR-10)"
+    )
+    reel.add_argument("--match-dir", type=Path, required=True, help="directory of the match files")
+    reel.add_argument("--video", type=Path, help=f"default: {VIDEO_FILE} in the match dir")
+    reel.add_argument("--db", type=Path, help="database file (default: aicoach.db in match dir)")
+    reel.add_argument("--match-id", help="default: name of the match directory")
+    reel.add_argument(
+        "--type",
+        dest="kind",
+        required=True,
+        choices=KINDS,
+        help="event category; card is the fouls with a card",
+    )
+    reel.add_argument("--half", type=int, choices=(1, 2), help="only this half")
+    reel.add_argument("--side", choices=("home", "away"), help="only this team (unknown: skipped)")
+    reel.add_argument("--before", type=float, default=DEFAULT_BEFORE_S, help="seconds before")
+    reel.add_argument("--after", type=float, default=DEFAULT_AFTER_S, help="seconds after")
+    reel.add_argument(
+        "--max",
+        dest="max_events",
+        type=int,
+        default=DEFAULT_MAX_EVENTS,
+        help="most events in a reel (default: %(default)s); more is an error",
+    )
+
+    labels = commands.add_parser(
+        "export-labels", help="write the current events as a ground-truth JSON file (FR-9)"
+    )
+    labels.add_argument("--db", type=Path, required=True, help="database file")
+    labels.add_argument("--out", type=Path, required=True, help="the JSON file to write")
+    labels.add_argument(
+        "--reviewed-only",
+        action="store_true",
+        help="only events that were confirmed, added or edited by a person",
+    )
+    labels.add_argument("--match-dir", type=Path, help="default: the directory of --db")
+    labels.add_argument("--match-id", help="default: name of the match directory")
+    labels.add_argument(
+        "--video-name", default=DEFAULT_VIDEO_NAME, help="the `video` field (default: %(default)s)"
     )
 
     describe = commands.add_parser(
@@ -733,6 +784,70 @@ def _clip(args: argparse.Namespace) -> int:
     return 0
 
 
+def _reel(args: argparse.Namespace) -> int:
+    """Build the reel of one category and print where it is, its length, size and build time."""
+    match_dir: Path = args.match_dir
+    video: Path = args.video or match_dir / VIDEO_FILE
+    options = ReelOptions(
+        before_s=args.before,
+        after_s=args.after,
+        max_events=args.max_events,
+        font_file=load_settings().aicoach_font_file,
+    )
+    started = time.perf_counter()
+    result = export_event_reel(
+        args.db or match_dir / DB_FILE,
+        args.match_id or match_dir.resolve().name,
+        match_dir,
+        video,
+        ReelFilter(args.kind, args.half, args.side),
+        options,
+    )
+    seconds = time.perf_counter() - started
+    length = "unknown" if result.duration_s is None else f"{result.duration_s:.1f} s"
+    size_mb = result.path.stat().st_size / 1_000_000
+    sys.stdout.write(
+        f"reel: {result.path}\n"
+        f"events: {result.n_events}\n"
+        f"length: {length}\n"
+        f"size: {size_mb:.1f} MB\n"
+        f"build time: {seconds:.1f} s (cached: {result.cached})\n"
+        f"captions: {result.captioned}\n"
+        f"join re-encoded: {result.reencoded}\n"
+    )
+    if result.team_unknown:
+        sys.stdout.write(f"skipped, team unknown: {result.team_unknown}\n")
+    for text in result.warnings:
+        sys.stdout.write(f"warning: {text}\n")
+    return 0
+
+
+def _export_labels(args: argparse.Namespace) -> int:
+    """Write the current events as a ground-truth file and print the counts by category."""
+    db: Path = args.db
+    match_dir: Path = args.match_dir or db.resolve().parent
+    exported = export_labels(
+        db,
+        args.match_id or match_dir.resolve().name,
+        match_dir,
+        video_name=args.video_name,
+        reviewed_only=args.reviewed_only,
+    )
+    write_labels(args.out, exported.ground_truth)
+    counts = exported.counts_by_type()
+    by_type = ", ".join(f"{name} {counts[name]}" for name in sorted(counts)) or "none"
+    sys.stdout.write(
+        f"labels: {args.out}\nevents: {len(exported.ground_truth.events)} ({by_type})\n"
+    )
+    if args.reviewed_only:
+        sys.stdout.write(f"not reviewed, left out: {exported.skipped_unreviewed}\n")
+    if exported.skipped_no_half:
+        sys.stdout.write(f"warning: {exported.skipped_no_half} events without a half left out\n")
+    if not exported.ground_truth.halves:
+        sys.stdout.write("warning: no half bounds (candidates.json missing): halves left out\n")
+    return 0
+
+
 def _describe(args: argparse.Namespace) -> int:
     """Describe one event from its clip; print the text with the model, the cost and the mark."""
     settings = load_settings()
@@ -784,6 +899,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _ui(args)
         if args.command == "clip":
             return _clip(args)
+        if args.command == "reel":
+            return _reel(args)
+        if args.command == "export-labels":
+            return _export_labels(args)
         if args.command == "describe":
             return _describe(args)
         if args.command == "agent-eval":
