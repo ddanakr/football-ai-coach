@@ -118,6 +118,7 @@ class EventRow:
     status_text: str
     edit_text: str = ""
     player_text: str = ""
+    corner_text: str = ""
 
     @property
     def type_text(self) -> str:
@@ -178,11 +179,16 @@ def player_texts(
     return texts
 
 
-def to_row(event: CurrentEvent, players: Mapping[PlayerKey, str] | None = None) -> EventRow:
+def to_row(
+    event: CurrentEvent,
+    players: Mapping[PlayerKey, str] | None = None,
+    corners: Mapping[str, str] | None = None,
+) -> EventRow:
     """Format an event for the list; missing fields show as a dash.
 
     `players` gives the player texts by (type, `t_v`); an event added or moved by the user has
-    another key, so it gets no name, and one added by the user never does.
+    another key, so it gets no name, and one added by the user never does. `corners` gives the
+    text of the corner tags by event id (D-078).
     """
     player = (
         "" if event.origin == "user" or not players else players.get((event.type, event.t_v), "")
@@ -204,14 +210,17 @@ def to_row(event: CurrentEvent, players: Mapping[PlayerKey, str] | None = None) 
         else ru.STATUS_LABELS.get(event.status, event.status),
         edit_text=edit_mark(event),
         player_text=player,
+        corner_text=(corners or {}).get(event.event_id, ""),
     )
 
 
 def to_rows(
-    events: Collection[CurrentEvent], players: Mapping[PlayerKey, str] | None = None
+    events: Collection[CurrentEvent],
+    players: Mapping[PlayerKey, str] | None = None,
+    corners: Mapping[str, str] | None = None,
 ) -> list[EventRow]:
     """`to_row` for every event, order kept."""
-    return [to_row(e, players) for e in events]
+    return [to_row(e, players, corners) for e in events]
 
 
 def _blank(text: str) -> str:
@@ -225,7 +234,8 @@ def table_records(rows: Sequence[EventRow]) -> list[dict[str, str | float | None
     team, player, edit mark. The order of the records is the order of `rows`, so a selected table
     index is an index into `rows`.
     """
-    return [
+    with_corners = any(row.corner_text for row in rows)
+    records: list[dict[str, str | float | None]] = [
         {
             ru.COLUMN_TIME: row.time_text,
             ru.COLUMN_TYPE: row.type_text,
@@ -238,6 +248,10 @@ def table_records(rows: Sequence[EventRow]) -> list[dict[str, str | float | None
         }
         for row in rows
     ]
+    if with_corners:  # the column appears only when some corner has tags (D-078)
+        for record, row in zip(records, rows, strict=True):
+            record[ru.COLUMN_CORNER] = row.corner_text
+    return records
 
 
 def selected_row(rows: Sequence[EventRow], selected: Sequence[int]) -> EventRow | None:

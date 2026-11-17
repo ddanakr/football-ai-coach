@@ -141,6 +141,8 @@ def test_run_ingest_with_tdeed_file_runs_every_step_and_ends_done(
         "transcribe",
         "fusion",
         "review_candidates",
+        "teams",
+        "corner_tags",
     ]
     names_args = fakes.stages.calls[2]
     assert names_args[1][0] == match_dir
@@ -195,6 +197,8 @@ def test_run_ingest_without_tdeed_waits_then_resumes_without_redoing_ready_steps
         "transcribe",
         "fusion",
         "review_candidates",
+        "teams",
+        "corner_tags",
     ]
     assert states(second.match_dir)["tdeed"] == "done"
     assert states(second.match_dir)[STAGE] == "done"
@@ -534,7 +538,13 @@ def test_run_ingest_failing_review_layer_is_recorded_and_the_ingest_goes_on(
 
     assert not result.waiting_for_tdeed  # the events are in the database
     assert result.fusion is not None
-    assert [c[0] for c in fakes.stages.calls][-2:] == ["fusion", "review_candidates"]
+    # The review layer failed; the two paid steps after it still ran (D-078).
+    assert [c[0] for c in fakes.stages.calls][-4:] == [
+        "fusion",
+        "review_candidates",
+        "teams",
+        "corner_tags",
+    ]
     entries = read_status(match_dir).stages
     assert entries[STAGE].state == "done"
     assert entries["review_candidates"].state == "failed"
@@ -572,3 +582,51 @@ def test_run_ingest_interrupt_in_the_review_layer_is_not_swallowed(
 
     assert states(match_dir)[STAGE] == "failed"
     assert not (match_dir / LOCK_FILE).exists()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("failing", ["teams", "corner_tags"])
+def test_run_ingest_failing_team_or_corner_step_is_recorded_and_the_ingest_goes_on(
+    tmp_path: Path, fakes: Fakes, failing: str
+) -> None:
+    match_dir = tmp_path / "data" / VID
+    match_dir.mkdir(parents=True)
+    write_tdeed(match_dir / "tdeed_small.json", [])
+    fakes.stages = Recorder(fail_at=failing, error=ExternalServiceError("502 from the service"))
+
+    result = ingest(tmp_path, fakes)
+
+    assert result.fusion is not None
+    assert [c[0] for c in fakes.stages.calls][-3:] == ["review_candidates", "teams", "corner_tags"]
+    entries = read_status(match_dir).stages
+    assert entries[failing].state == "failed"
+    assert "502" in (entries[failing].error or "")
+    assert entries[STAGE].state == "done"
+
+
+@pytest.mark.unit
+def test_run_ingest_without_tdeed_does_not_run_the_team_and_corner_steps(
+    tmp_path: Path, fakes: Fakes
+) -> None:
+    result = ingest(tmp_path, fakes)
+
+    assert result.waiting_for_tdeed
+    # Both need the events of the fusion (the side of a goal, the corners): nothing to look at yet.
+    assert "teams" not in [c[0] for c in fakes.stages.calls]
+    assert "corner_tags" not in [c[0] for c in fakes.stages.calls]
+
+
+@pytest.mark.unit
+def test_run_ingest_passes_the_match_directory_and_id_to_the_team_and_corner_steps(
+    tmp_path: Path, fakes: Fakes
+) -> None:
+    match_dir = tmp_path / "data" / VID
+    match_dir.mkdir(parents=True)
+    write_tdeed(match_dir / "tdeed_small.json", [])
+
+    ingest(tmp_path, fakes)
+
+    by_name = {c[0]: c for c in fakes.stages.calls}
+    for name in ("teams", "corner_tags"):
+        assert by_name[name][1] == (match_dir, VID)
+        assert by_name[name][2] == {"force": False}

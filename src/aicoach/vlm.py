@@ -9,8 +9,11 @@ cost the service charged is in `usage.cost`, as for the agent.
 """
 
 import base64
+import json
+import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Protocol  # Any: JSON of the chat API
+from typing import Any, Generic, Protocol, TypeVar  # Any: JSON of the chat API
 
 from aicoach.agent.messages import Usage
 from aicoach.agent.openrouter_llm import CHAT_PATH, from_response
@@ -107,3 +110,65 @@ class OpenRouterVideoModel:
         )
         turn = from_response(body)
         return VideoReply(turn.text, turn.usage, turn.truncated)
+
+
+_FENCE = re.compile(r"^```[A-Za-z]*\s*|\s*```$")
+_T = TypeVar("_T")
+
+
+def extract_json_object(text: str) -> dict[str, Any] | None:  # Any: JSON from a model
+    """The JSON object a model answered with, or `None` when there is no usable one.
+
+    Accepts the bare object and the one wrapped in a Markdown code fence or in a sentence of
+    prose (the first `{` to the last `}`). A list, a scalar or a broken text give `None`.
+    """
+    body = _FENCE.sub("", text.strip())
+    start, end = body.find("{"), body.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        value = json.loads(body[start : end + 1])
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+@dataclass(frozen=True)
+class JsonAnswer(Generic[_T]):
+    """The outcome of `ask_json`: the parsed value (`None` when every attempt was invalid), the
+    number of requests made and the tokens and cost of all of them."""
+
+    value: _T | None
+    attempts: int
+    usage: Usage = field(default_factory=Usage)
+
+
+def ask_json(
+    model: VideoModel,
+    system: str,
+    prompt: str,
+    video: bytes,
+    parse: Callable[[str], _T | None],
+    *,
+    video_seconds: float | None = None,
+    max_attempts: int = 2,
+) -> JsonAnswer[_T]:
+    """Ask a video model for a strict answer: `parse` turns the text into a value or `None`.
+
+    An answer that `parse` rejects (not JSON, wrong values, cut off) is asked for once more
+    (`max_attempts` requests in all); after that the value is `None` and the caller decides what
+    "no answer" means. A service failure is not retried here (`OpenRouterVideoModel` already
+    retries 429 and 5xx) and propagates.
+
+    Raises:
+        ExternalServiceError: The service failed for good.
+        BudgetExceededError: The budget does not allow a request.
+    """
+    usage = Usage()
+    for attempt in range(1, max_attempts + 1):
+        reply = model.describe(system, prompt, video, video_seconds=video_seconds)
+        usage = usage + reply.usage
+        value = None if reply.truncated else parse(reply.text)
+        if value is not None:
+            return JsonAnswer(value, attempt, usage)
+    return JsonAnswer(None, max_attempts, usage)

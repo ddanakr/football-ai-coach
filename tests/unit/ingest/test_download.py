@@ -82,6 +82,7 @@ def test_ytdlp_options_ask_for_720p_video_plus_audio_merged_to_mp4_with_resume(
     assert options["socket_timeout"] > 0
     assert options["paths"]["home"] == str(tmp_path)
     assert options["outtmpl"]["default"] == "src.%(ext)s"
+    assert options["writeinfojson"] is True
 
 
 @pytest.mark.unit

@@ -15,6 +15,7 @@ from pathlib import Path
 
 import structlog
 
+from aicoach.corner_tags.view import CornerView, load_views
 from aicoach.domain.events import EventType
 from aicoach.errors import AicoachError, StorageError
 from aicoach.fusion.schemas import CandidatesResult
@@ -31,6 +32,7 @@ from aicoach.scoreboard.stage import RESULT_FILE as SCOREBOARD_FILE
 from aicoach.speech.transcript import RESULT_FILE as TRANSCRIPT_FILE
 from aicoach.speech.transcript import TranscriptResult, TranscriptSegment
 from aicoach.storage import CurrentEvent, connect, get_current_events
+from aicoach.teams.store import load_effective
 from aicoach.ui.data import load_time_bounds
 from aicoach.ui.edits import with_derived_half
 
@@ -61,6 +63,9 @@ class EventFacts:
     # A foul that a card plate made: "yellow" or "red" (the red plate was never seen on real
     # footage, only on synthetic frames). None: no card plate.
     card: str | None = None
+    # What a video model read from the clip of a corner (D-078); None for other events and for a
+    # corner without tags. Never a fact: always shown as "by the clip, not verified".
+    corner: CornerView | None = None
 
 
 @dataclass(frozen=True)
@@ -84,6 +89,8 @@ class MatchContext:
     lineup: tuple[Player, ...] = ()
     half_minutes: Mapping[int, tuple[int | None, int | None]] = field(default_factory=dict)
     segments: tuple[SegmentFacts, ...] = ()
+    # Kit colour of each side (`None`: not determined), from `teams.json` or the user (D-078).
+    team_kits: Mapping[str, str | None] = field(default_factory=dict)
 
     def by_id(self) -> dict[str, EventFacts]:
         """The events by `event_id`."""
@@ -278,15 +285,19 @@ def build_facts(
     players: Mapping[PlayerKey, tuple[PlayerRead, ...]],
     max_extrapolation_s: float,
     cards: Mapping[PlayerKey, str] | None = None,
+    corners: Mapping[str, CornerView] | None = None,
 ) -> tuple[EventFacts, ...]:
-    """Attach the game minute and the plate names to the events (pure)."""
+    """Attach the game minute, the plate names and the corner tags to the events (pure)."""
     facts: list[EventFacts] = []
     for event in events:
         minute = game_minute(clock_at(segments, event.t_v, max_extrapolation_s))
         # A user-added event never gets a name; a moved or retyped one has another key.
         names = () if event.origin == "user" else players.get((event.type, event.t_v), ())
         card = None if event.origin == "user" else (cards or {}).get((event.type, event.t_v))
-        facts.append(EventFacts(event, minute, minute_text(minute, event.half), names, card))
+        corner = (corners or {}).get(event.event_id)
+        facts.append(
+            EventFacts(event, minute, minute_text(minute, event.half), names, card, corner)
+        )
     return tuple(facts)
 
 
@@ -306,19 +317,22 @@ def load_context(db_path: Path, match_id: str, match_dir: Path) -> MatchContext:
     events = [with_derived_half(e, bounds) for e in stored]
     max_extrapolation_s = ScoreboardConfig().timeline.max_extrapolation_s
     segments = _segments(match_dir)
+    lineup, lineup_names = _lineup(match_dir)
+    teams = load_effective(match_dir, lineup_names)
     facts = build_facts(
         events,
         segments,
         _players_by_event(match_dir),
         max_extrapolation_s,
         _cards_by_event(match_dir),
+        load_views(match_dir, events, teams),
     )
-    lineup, team_names = _lineup(match_dir)
     transcript = _commentary(match_dir)
     return MatchContext(
         match_id=match_id,
         events=facts,
-        team_names={**DEFAULT_TEAM_NAMES, **team_names},
+        team_names={side: team.name for side, team in teams.items()},
+        team_kits={side: team.kit for side, team in teams.items()},
         has_lineup=bool(lineup),
         lineup=lineup,
         half_minutes=_half_minutes(segments, max_extrapolation_s, match_dir),

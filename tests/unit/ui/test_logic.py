@@ -7,6 +7,7 @@ from tests.fixtures.ui_synth import make_event
 
 from aicoach.domain.events import EventType
 from aicoach.errors import ConfigError
+from aicoach.i18n import ru
 from aicoach.storage import CurrentEvent
 from aicoach.ui.logic import (
     PLAYER_PRE_ROLL_S,
@@ -291,3 +292,23 @@ def test_selected_row_with_no_rows_gives_none() -> None:
 @pytest.mark.unit
 def test_to_rows_keeps_order(events: list[CurrentEvent]) -> None:
     assert [r.event_id for r in to_rows(events)] == ids(events)
+
+
+@pytest.mark.unit
+def test_table_records_have_the_corner_column_only_when_some_corner_has_tags() -> None:
+    corner = make_event("p:3", EventType.CORNER, 100.0)
+    goal = make_event("p:4", EventType.GOAL, 200.0)
+
+    plain = table_records(to_rows([corner, goal]))
+    tagged = table_records(to_rows([corner, goal], None, {"p:3": "подаёт: Актобе (по клипу)"}))
+
+    assert ru.COLUMN_CORNER not in plain[0]
+    assert [r[ru.COLUMN_CORNER] for r in tagged] == ["подаёт: Актобе (по клипу)", ""]
+
+
+@pytest.mark.unit
+def test_to_row_takes_the_corner_text_by_event_id() -> None:
+    row = to_row(make_event("p:3", EventType.CORNER, 100.0), None, {"p:3": "x", "p:4": "y"})
+
+    assert row.corner_text == "x"
+    assert to_row(make_event("p:9", EventType.CORNER, 100.0)).corner_text == ""

@@ -202,6 +202,8 @@ INGEST_STEP_LABELS: dict[str, str] = {
     "transcribe": "Расшифровка комментария",
     "tdeed": "Файл T-DEED",
     "fuse": "Слияние в базу",
+    "teams": "Команды и форма",
+    "corner_tags": "Теги угловых",
     "review_candidates": "Кандидаты для проверки",
 }
 INGEST_STATE_LABELS: dict[str, str] = {
@@ -347,3 +349,124 @@ LABELS_DOWNLOAD = "Скачать разметку (JSON)"
 LABELS_SUMMARY = "В файле {count} событий."
 LABELS_SKIPPED = "Не вошло событий без определённого тайма: {count}."
 LABELS_FAILED = "Разметка не собрана: {error}"
+
+
+# Teams and kit colours (D-078).
+KIT_LABELS: dict[str, str] = {
+    "white": "белый",
+    "black": "чёрный",
+    "red": "красный",
+    "blue": "синий",
+    "light_blue": "голубой",
+    "green": "зелёный",
+    "yellow": "жёлтый",
+    "orange": "оранжевый",
+    "purple": "фиолетовый",
+    "other": "другой",
+    "unclear": "не видно",
+}
+KIT_UNDETERMINED = "не определён"
+TEAMS_KITS_SKIPPED = (
+    "Цвета формы не определены: {reason}. Впишите ключ OpenRouter в .env и запустите шаг ещё раз "
+    "или задайте цвет вручную в интерфейсе."
+)
+TEAMS_NO_VIDEO = "Цвета формы не определены: видео матча (src.mp4) не найдено."
+TEAMS_NO_DB = "Цвета формы не определены: базы событий (aicoach.db) ещё нет."
+TEAMS_NO_SOURCES = (
+    "Цвета формы не определены: нет голов и карточек с известной командой, по которым можно "
+    "смотреть клипы."
+)
+TEAMS_HEADER = "Команды и форма"
+TEAMS_HELP = (
+    "Названия берутся из состава, иначе из заголовка видео (допущение: первая команда в заголовке "
+    "хозяева; сверьте), иначе «хозяева» и «гости». Цвет "
+    "формы определяет видеомодель по клипам голов и карточек. Ваше значение важнее: оно "
+    "хранится отдельно и не стирается новым запуском."
+)
+TEAMS_NAME_LABEL = "Название: {side}"
+TEAMS_KIT_LABEL = "Цвет формы: {side}"
+TEAMS_KIT_AUTO = "как определено"
+TEAMS_SAVE = "Сохранить"
+TEAMS_RESET = "Сбросить мои значения"
+TEAMS_SAVED = "Сохранено."
+TEAMS_SAVE_FAILED = "Не сохранено: {error}"
+TEAMS_SOURCE_LABELS: dict[str, str] = {
+    "lineup": "состав",
+    "title": "заголовок видео",
+    "default": "по умолчанию",
+    "manual": "вручную",
+    "vlm": "по клипам",
+    "undetermined": "не определено",
+}
+TEAMS_LINE = "{side}: {name} ({name_source}), форма {kit} ({kit_source})"
+
+# Corner tags (D-078): an extension beyond the specification; a model's reading of a clip.
+CORNER_TAGS_SKIPPED = "теги угловых не получены: {reason}"
+CORNER_TAGS_NO_DB = "теги угловых не получены: базы событий (aicoach.db) ещё нет"
+CORNER_TAGS_NO_VIDEO = "теги угловых не получены: видео матча (src.mp4) не найдено"
+CORNER_UNVERIFIED = "по клипу, не проверено"
+CORNER_TAGS_ANSWER_MARK = "Теги угловых: по клипу, не проверено."
+# The `zone` tag was right in 4 of 8 corners of match01 (docs/metrics.md, D-078).
+CORNER_LOW_RELIABILITY = "низкая надёжность"
+CORNER_ZONE_ANSWER_MARK = (
+    "Поле «куда прилетел мяч» (zone) низкой надёжности: на пилоте совпало 4 из 8."
+)
+CORNER_ATTACKING = "подаёт"
+CORNER_TEAM_UNKNOWN = "команда не определена"
+CORNER_NOT_A_CORNER = "по клипу это не угловой"
+COLUMN_CORNER = "Теги углового"
+CORNER_FIELD_LABELS: dict[str, str] = {
+    "is_corner": "Это угловой",
+    "attacking_kit": "Цвет формы подающих",
+    "delivery": "Подача",
+    "zone": "Куда прилетел мяч (низкая надёжность)",
+    "first_contact": "Первое касание",
+    "outcome": "Чем кончилось",
+}
+CORNER_FIELD_SHORT: dict[str, str] = {
+    "delivery": "подача",
+    "zone": "зона",
+    "first_contact": "контакт",
+    "outcome": "исход",
+}
+CORNER_VALUE_LABELS: dict[str, dict[str, str]] = {
+    "is_corner": {"yes": "да", "no": "нет", "unclear": "не видно"},
+    "attacking_kit": KIT_LABELS,
+    "delivery": {
+        "cross": "навес",
+        "short": "короткий",
+        "low_ball": "прострел низом",
+        "unclear": "не видно",
+    },
+    "zone": {
+        "near_post": "ближняя штанга",
+        "center": "центр",
+        "far_post": "дальняя штанга",
+        "edge_of_box": "край штрафной",
+        "unclear": "не видно",
+    },
+    "first_contact": {
+        "attack": "атака",
+        "defence": "защита",
+        "keeper": "вратарь",
+        "nobody": "никто",
+        "unclear": "не видно",
+    },
+    "outcome": {
+        "shot": "удар",
+        "goal": "гол",
+        "cleared": "выбили",
+        "keeper_caught": "вратарь забрал",
+        "corner_or_out": "угловой или аут",
+        "attack_continues": "атака продолжилась",
+        "unclear": "не видно",
+    },
+}
+CORNER_FILTERS_HEADER = "Фильтры угловых (по клипу, не проверено)"
+CORNER_FILTERS_NO_TAGS = (
+    "Тегов угловых нет. Запустите `python -m aicoach.cli corner-tags --match-dir <каталог>`."
+)
+CORNER_FILTER_TEAM = "Команда подачи"
+CORNER_FILTER_ANY = "любое"
+CORNER_FILTER_TEAM_UNKNOWN = "команда не определена"
+CORNER_FILTER_NOTE = "Фильтры относятся только к угловым; остальные события они не скрывают."

@@ -15,6 +15,7 @@ import streamlit as st
 import structlog
 
 from aicoach import clips
+from aicoach.corner_tags.view import apply_filter, load_views, texts
 from aicoach.domain.events import EventType
 from aicoach.errors import ConfigError, ExportError, IngestError, PlatesError, StorageError
 from aicoach.i18n import ru
@@ -22,7 +23,9 @@ from aicoach.ingest.download import VIDEO_FILE
 from aicoach.ingest.stage import STAGE as INGEST_STAGE
 from aicoach.status import read_status
 from aicoach.storage import CurrentEvent
+from aicoach.teams.store import load_effective
 from aicoach.ui.agent_panel import render_agent_panel
+from aicoach.ui.corner_panel import render_corner_filters, render_teams
 from aicoach.ui.data import (
     apply_edit,
     count_edits,
@@ -586,7 +589,11 @@ def main() -> None:
     if view is not None:
         present = [t for t in EventType if t in view.types | set(present)]
     flt = _sidebar(present)
-    shown = filter_events(events, flt)
+    teams = load_effective(args.results_dir)
+    corner_views = load_views(args.results_dir, events, teams)
+    corner_flt = render_corner_filters(has_tags=bool(corner_views), teams=teams)
+    render_teams(args.results_dir, teams)
+    shown = apply_filter(filter_events(events, flt), corner_views, corner_flt)
     # Filled below the table code (the pick is known only then): the video on the left, the
     # agent panel on the right, the table full width under both.
     player_slot, agent_slot = st.columns(TOP_COLUMNS)
@@ -602,7 +609,7 @@ def main() -> None:
     else:
         st.caption(ru.SHOWN.format(shown=len(shown), total=len(events)))
         if shown:
-            rows = to_rows(shown, load_player_texts(args.results_dir))
+            rows = to_rows(shown, load_player_texts(args.results_dir), texts(corner_views, teams))
             _take_pick(rows, _render_table(rows))
         else:
             st.info(ru.NOTHING_MATCHES)
