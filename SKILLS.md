@@ -134,27 +134,41 @@ mlflow ui --backend-store-uri "$MLFLOW_TRACKING_URI"
 
 Запуски создаются только командами `eval` и обучения. Состав параметров, метрик и тегов описан в `CLAUDE.md`, раздел 7.
 
-## 6. Контейнеры
+## 6. Docker (D-079)
 
-> **Проверить до использования:** есть ли на сервере Docker и `nvidia-container-toolkit`. Если нет, работай через `venv` из раздела 1. Контейнеры не обязательны для сдачи.
+Образ `aicoach:latest` запускает интерфейс и команды без ручной установки Python, FFmpeg и Tesseract. Файлы: `Dockerfile`, `docker-compose.yml`, `.dockerignore` в корне. Нужен Docker Compose не старше 2.24 (необязательный `env_file` с `required: false`). Образ только для процессора: в нём нет CUDA и TensorFlow, веток A и T-DEED нет (T-DEED по-прежнему запускается отдельно в Colab, D-046; готовый `tdeed_*.json` кладётся в каталог матча на томе). Основа `python:3.11-slim-trixie` (Debian 13; тег назван по релизу, имена пакетов проверены только для него), пакеты `ffmpeg`, `tesseract-ocr`, `tesseract-ocr-kaz`, `tesseract-ocr-rus`, `fonts-dejavu-core` (шрифт для подписей роликов, путь `/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf` код находит сам). Проект ставится `pip install .` без extras `dev`; процесс идёт от пользователя `app` (uid 1000), не от root.
 
-```bash
-docker build -t aicoach:dev -f docker/Dockerfile .
-docker build -t aicoach-features-tf:dev -f docker/Dockerfile.features-tf .
+```powershell
+# сборка (около 4 минут с нуля, образ 1,94 ГБ)
+docker compose build
+# если на машине compose падает на "failed to execute bake" (так было на машине разработки), тот же образ:
+docker build -t aicoach:latest .
 
-# проверка качества в контейнере
-docker run --rm -v "$PWD:/app" aicoach:dev python scripts/check.py
+# том данных: каталог с каталогами матчей; по умолчанию ./data рядом с docker-compose.yml
+$env:AICOACH_DATA = "C:\Projects\data"    # путь Windows, прямые слэши тоже подходят; внутри контейнера это /data
+$env:AICOACH_PORT = "8501"                 # необязательно: порт на хосте (умолчание 8501)
+docker compose up -d ui                    # интерфейс на http://localhost:8501, порт открыт только для 127.0.0.1
+docker compose down                        # остановка
 
-# стадия с видеокартой; данные и конфиги монтируются, секреты берутся из .env
-docker run --rm --gpus all --env-file .env -v "$PWD/data:/app/data" \
-  aicoach:dev python -m aicoach.cli spot --match-id <ID> --branch a
+# остальные команды: сервис cli (профиль tools), в аргументах пути контейнера /data/...
+docker compose run --rm cli ingest "https://youtu.be/<ID>" --templates /data/match01/scoreboard_templates
+docker compose run --rm cli plate-names --video /data/match01/src.mp4 --lineups /data/match01/lineups.csv
+docker compose run --rm cli agent-eval --questions /data/match01/agent_questions.csv --video /data/match01/src.mp4 --db /data/match01/aicoach_model.db
+docker compose run --rm cli final-eval --match-dir /data/match01 --tdeed tdeed_SoccerNet_small_thr0.05_bs2.json --output /data/match01/metrics.md
 
-# извлечение признаков в образе с TensorFlow
-docker run --rm --gpus all --env-file .env -v "$PWD/data:/app/data" \
-  aicoach-features-tf:dev python -m aicoach.cli features --match-id <ID>
+# открыть конкретный матч в интерфейсе (аргументы команды `ui`, пути контейнера); при уже запущенном `up ui` порт занят: сначала `docker compose down` или другой `AICOACH_PORT`
+docker compose run --rm --service-ports ui ui --video /data/match01/src.mp4 --youtube-id <ID> --db /data/match01/aicoach_model.db --data-root /data
 ```
 
-В образы не копируются `.env`, `data/`, `mlruns/` и видео (проверь `.dockerignore`).
+**Секреты и `.env`.** `.env` в образ не попадает (`.dockerignore` это белый список: в контекст сборки идут только `pyproject.toml`, `README.md`, `src/`, `data_labels/`; `.git`, `.venv`, данные, клипы, `.env` не доходят даже до демона). При запуске compose передаёт `.env` из корня в окружение контейнера (`env_file`, файл необязателен); ключи видны только процессу контейнера. `AICOACH_DATA_ROOT` задан в compose как `/data`, а `TESSERACT_CMD` и `AICOACH_FONT_FILE` обнулены: пути Windows из `.env` в контейнере не имеют смысла (Tesseract в PATH, шрифт DejaVu). `docker compose config` печатает значения из `.env` (ключи) в открытом виде: для проверки файла использовать `docker compose config --no-env-resolution`, вывод никуда не пересылать.
+
+**Что в контейнере иначе, чем на Windows.**
+- Видеокарты нет. Стадии `scoreboard` и `plates` декодируют на процессоре (`--cpu` у `ingest`, `run`, `plates`; для AV1 это в десятки раз медленнее). Образцы табло, откалиброванные в режиме `opencv_gpu` (так откалиброван `match01`), в CPU-контейнере не подходят: `scoreboard` останавливается с `ScoreboardParseError` (цвета отличаются между режимами, `scoreboard/stage.py`); нужна калибровка в режиме CPU. Шаги `download`, `audio`, `plate_names`, `transcribe`, `fuse`, `teams`, `corner_tags`, интерфейс и агент от видеокарты не зависят. Остановку `scoreboard` на образцах `match01` агент не запускал, вывод сделан по коду.
+- yt-dlp в образе без JS-рантайма: при запросе списка форматов он предупреждает «No supported JavaScript runtime», часть форматов YouTube может не отдаваться (на видео `match01` форматы 720p в списке были). Рантайм (например deno) это новая зависимость образа, ставится только с согласия владельца.
+- Права: процесс идёт с uid 1000. На Windows (Docker Desktop) том доступен на запись; на Linux каталог данных должен быть доступен uid 1000.
+- Tesseract в Debian 5.5.0 (на Windows 5.5.3): на `match01` итоговые 22 фамилии из состава те же, в сыром тексте одной плашки расхождение в одной букве.
+- Порт 8501 занят другим процессом: задать `AICOACH_PORT`.
+
 
 ## 7. Post-Task Workflow (обязательно)
 

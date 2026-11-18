@@ -1,0 +1,37 @@
+# Viewer: `docker compose up ui` (http://localhost:8501).
+# Commands: `docker compose run --rm cli ingest "<URL>" --templates /data/match01/scoreboard_templates`.
+# See the "Docker" section of SKILLS.md.
+
+x-aicoach: &aicoach
+  image: aicoach:latest
+  build:
+    context: .
+    dockerfile: Dockerfile
+  # Secrets and settings from .env next to this file; the file is optional.
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    AICOACH_DATA_ROOT: /data
+    # Windows paths from a host .env mean nothing here: Tesseract is in PATH, the font is DejaVu.
+    TESSERACT_CMD: ""
+    AICOACH_FONT_FILE: ""
+  volumes:
+    # Directory with one directory per match; AICOACH_DATA is a host path (default ./data).
+    - ${AICOACH_DATA:-./data}:/data
+
+services:
+  ui:
+    <<: *aicoach
+    command: ["ui", "--data-root", "/data"]
+    ports:
+      - "127.0.0.1:${AICOACH_PORT:-8501}:8501"
+    restart: unless-stopped
+
+  # The same image for the other commands: ingest, agent-eval, final-eval, clip, reel, ...
+  cli:
+    <<: *aicoach
+    profiles: ["tools"]
+    # No viewer runs in a one-off command, so the image health check would only say "unhealthy".
+    healthcheck:
+      disable: true
