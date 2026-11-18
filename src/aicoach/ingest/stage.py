@@ -3,14 +3,13 @@
 Steps, each with its own entry in `status.json` of the match directory: `download` (yt-dlp,
 frame size check), `audio` (16 kHz mono WAV), `scoreboard`, `plates`, `plate_names` (player names
 read from the plate crops, skipped when Tesseract is missing), `transcribe` (the commentary of
-the whole match, skipped without a key of the provider), `tdeed` (the model output
-brought from the notebook), `fuse` and `review_candidates` (the extra model shots for the
-review mode, D-075), `teams` (team names and kit colours, D-078) and `corner_tags` (the tags
-of every corner from its clip, D-078); the last three are optional: a failure is recorded and the
-ingest goes on. The `ingest` entry
-tells the whole state. Every step skips what is ready, so a repeated ingest continues where the
-last one stopped. Without the T-DEED file the command stops with the `tdeed` step `waiting`
-(D-058).
+the whole match, skipped without a key of the provider), `tdeed` (the model output: run here when
+a video card is there, otherwise brought from the notebook), `fuse` and `review_candidates` (the
+extra model shots for the review mode, D-075), `teams` (team names and kit colours, D-078) and
+`corner_tags` (the tags of every corner from its clip, D-078); the last three are optional: a
+failure is recorded and the ingest goes on. The `ingest` entry tells the whole state. Every step
+skips what is ready, so a repeated ingest continues where the last one stopped. Without the T-DEED
+file and without a video card the command stops with the `tdeed` step `waiting` (D-058, D-080).
 """
 
 import re
@@ -36,6 +35,7 @@ from aicoach.scoreboard.stage import TEMPLATES_DIR
 from aicoach.scoreboard.video import probe_video
 from aicoach.spotting.schemas import load_tdeed_file
 from aicoach.stage_common import Logger, Progress, elapsed_ms, record_failure, set_status
+from aicoach.tdeed.device import cuda_available
 
 STAGE = "ingest"
 STEPS = (
@@ -67,6 +67,7 @@ class IngestTools:
     ffmpeg: Runner | None = None  # None: run the real FFmpeg
     probe: Probe = probe_video
     stages: Stages = field(default_factory=Stages)
+    cuda_available: Callable[[], bool] = cuda_available  # False: wait for the notebook's file
 
 
 @dataclass(frozen=True)
@@ -299,15 +300,21 @@ def _run(job: _Job) -> IngestResult:
         lambda: _own_stage(d, TDEED_STEP, log, lambda: _find_tdeed(d, log)),
         timed=False,
     )
+    # With a video card here the model runs now (D-080); without one the notebook brings the file.
+    ran_here = False
+    if tdeed is None and tools.cuda_available():
+        job.step(TDEED_STEP, lambda: tools.stages.tdeed(d, job.match_id, device="auto"))
+        tdeed, ran_here = _find_tdeed(d, log), True
     if tdeed is None:
         progress = STEPS.index(TDEED_STEP) / len(STEPS)
         set_status(d, TDEED_STEP, "waiting", 0.0, log)
         set_status(d, STAGE, "waiting", progress, log)
         log.warning("waiting_for_tdeed", pattern=TDEED_PATTERN)
         return IngestResult(job.video_id, job.match_id, d, None)
+    # `reuse` after a run here: the times the model run just wrote stay in the entry.
     job.step(
         TDEED_STEP,
-        lambda: _own_stage(d, TDEED_STEP, log, lambda: _check_tdeed(tdeed)),
+        lambda: _own_stage(d, TDEED_STEP, log, lambda: _check_tdeed(tdeed), reuse=ran_here),
         timed=False,
     )
     fusion = job.step(

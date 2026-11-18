@@ -1,5 +1,6 @@
 """Fake stage functions for the pipeline tests: they record their calls and can fail."""
 
+from pathlib import Path
 from typing import Any
 
 from aicoach.corner_tags.schemas import CornerTagsFile
@@ -12,8 +13,9 @@ from aicoach.plates.schemas import PlatesResult
 from aicoach.review.schemas import ReviewCandidatesResult
 from aicoach.scoreboard.schemas import ScoreboardResult
 from aicoach.speech.transcript import TranscriptResult
+from aicoach.tdeed.stage import TdeedResult
 from aicoach.teams.store import TeamEntry, TeamsResult
-from tests.fixtures.fusion_synth import plates_result
+from tests.fixtures.fusion_synth import plates_result, write_tdeed
 from tests.fixtures.plates_synth import scoreboard_result
 
 
@@ -22,6 +24,7 @@ class Recorder:
     """Fake stages that record their calls in order; one of them can be made to fail."""
 
     def __init__(self, fail_at: str | None = None, error: BaseException | None = None) -> None:
+        self.tdeed_file: str | None = None  # a name: the fake `tdeed` writes that file
         self.calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
         self.fail_at = fail_at
         self.error = error or PlatesError("no scoreboard.json")
@@ -71,6 +74,13 @@ class Recorder:
         entry = TeamEntry(name="хозяева", name_source="default")
         return TeamsResult(match_id="m", cache_key="k", home=entry, away=entry)
 
+    def tdeed(self, *args: Any, **kwargs: Any) -> TdeedResult:
+        self._record("tdeed", args, kwargs)
+        match_dir: Path = args[0]
+        output = match_dir / (self.tdeed_file or "tdeed_fake.json")
+        write_tdeed(output, [])
+        return TdeedResult(output, "cuda", False, 0, 100.0)
+
     def corner_tags(self, *args: Any, **kwargs: Any) -> CornerTagsFile | None:
         self._record("corner_tags", args, kwargs)
         return None  # as a skipped step: the ingest must not depend on the tags
@@ -104,4 +114,5 @@ class Recorder:
             review_candidates=self.review_candidates,
             teams=self.teams,
             corner_tags=self.corner_tags,
+            tdeed=self.tdeed,
         )

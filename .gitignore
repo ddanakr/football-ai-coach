@@ -18,8 +18,9 @@ frames/
 clips/
 scoreboard_templates/
 
-# notebooks are forbidden
+# notebooks are forbidden, except the Colab launcher of the tdeed command (D-080)
 *.ipynb
+!notebooks/tdeed_colab.ipynb
 
 # video and audio
 *.mp4

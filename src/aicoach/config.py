@@ -76,6 +76,9 @@ class Settings(BaseSettings):
     tesseract_cmd: Path | None = None
     # The font file of the captions of a reel (FR-10); not set means a search in the usual places.
     aicoach_font_file: Path | None = None
+    # Where the `tdeed` command keeps the T-DEED code, its checkpoint and the model inputs; not set
+    # means `~/.cache/aicoach/tdeed`. It lies outside the repository: T-DEED is GPL code (D-046).
+    tdeed_cache_dir: Path | None = None
 
     @field_validator(
         "gemini_api_key",
@@ -84,6 +87,7 @@ class Settings(BaseSettings):
         "aicoach_data_root",
         "tesseract_cmd",
         "aicoach_font_file",
+        "tdeed_cache_dir",
         mode="before",
     )
     @classmethod
@@ -146,6 +150,7 @@ def load_settings(
     data_root: Path | None = None,
     gemini_model: str | None = None,
     llm_provider: str | None = None,
+    tdeed_cache_dir: Path | None = None,
 ) -> Settings:
     """Settings from the environment and `.env`; given arguments (CLI flags) win over both.
 
@@ -156,6 +161,8 @@ def load_settings(
         gemini_model: CLI value for `GEMINI_MODEL`; `None` or blank leaves them in charge.
         llm_provider: CLI value for `AICOACH_LLM_PROVIDER` (`--provider`); `None` or blank
             leaves the lower sources in charge.
+        tdeed_cache_dir: CLI value for `TDEED_CACHE_DIR` (`--cache-dir`); `None` leaves the lower
+            sources in charge.
 
     Raises:
         ConfigError: `.env` cannot be read (encoding, permissions), or a value is invalid (the
@@ -164,6 +171,8 @@ def load_settings(
     given: dict[str, Path | str] = {}
     if data_root is not None:
         given["aicoach_data_root"] = data_root
+    if tdeed_cache_dir is not None:
+        given["tdeed_cache_dir"] = tdeed_cache_dir
     if gemini_model is not None and gemini_model.strip():
         given["gemini_model"] = gemini_model
     if llm_provider is not None and llm_provider.strip():

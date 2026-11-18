@@ -169,6 +169,38 @@ TDEED_RESUME_UI = (
     "Затем нажмите «Обработать» с той же ссылкой ещё раз: готовые стадии пропустятся, "
     "продолжится слияние."
 )
+# The tdeed command (D-080): T-DEED on the video card of this machine or in the Colab notebook.
+TDEED_NO_CUDA = (
+    "На этой машине нет видеокарты NVIDIA с CUDA (или не установлен torch: "
+    "`pip install .[gpu]`), а T-DEED без неё работает намного медленнее. Запустите шаг в Colab: "
+    "{url} . Если всё же нужен процессор, укажите `--device cpu` явно."
+)
+TDEED_CPU_WARNING = (
+    "Предупреждение: T-DEED идёт на процессоре, это намного медленнее, чем на видеокарте."
+)
+TDEED_DONE = "Готово: {file} ({n} срабатываний, устройство {device})."
+TDEED_CACHED = (
+    "Уже есть: {file} ({n} срабатываний). Ничего не запускалось; `--force` запустит заново."
+)
+TDEED_SEGMENT = (
+    "Отрезок {start}–{end} ({length}); начало сдвинуто вниз на сетку модели "
+    "(было запрошено {requested})."
+)
+TDEED_TIMINGS = (
+    "Время: подготовка (код, чекпойнт) {prepare:.1f} с, FFmpeg {ffmpeg:.1f} с, "
+    "инференс {inference:.1f} с, всего {total:.1f} с."
+)
+TDEED_PER_MINUTE = (
+    "На минуту видео: FFmpeg {ffmpeg:.1f} с, инференс {inference:.1f} с "
+    "(инференс включает загрузку модели)."
+)
+TDEED_ESTIMATE = (
+    "Оценка на весь матч ({minutes:.1f} мин видео): FFmpeg {ffmpeg:.0f} с, инференс "
+    "{inference:.0f} с, всего {total:.0f} с (около {total_min:.0f} мин). Это оценка по отрезку, "
+    "не измерение."
+)
+TDEED_COMPARE_SAME = "совпадает"
+TDEED_COMPARE_DIFF = "различия"
 INGEST_HEADER = "Новый матч"
 INGEST_URL = "Ссылка на YouTube"
 INGEST_URL_HELP = "Например https://www.youtube.com/watch?v=… или https://youtu.be/…"

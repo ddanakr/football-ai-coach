@@ -57,3 +57,4 @@ repos:
         entry: Jupyter notebooks are forbidden (CLAUDE.md section 7); use scratch/*.py
         language: fail
         files: \.ipynb$
+        exclude: ^notebooks/tdeed_colab\.ipynb$  # the Colab launcher of `tdeed` (D-080)
