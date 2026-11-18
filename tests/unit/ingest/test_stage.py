@@ -14,6 +14,7 @@ from aicoach.errors import (
     IngestError,
     PlatesError,
     ScoreboardParseError,
+    SpottingError,
 )
 from aicoach.ingest.download import VIDEO_FILE, ProgressCallback
 from aicoach.ingest.lock import LOCK_FILE
@@ -74,6 +75,7 @@ class Fakes:
     ffmpeg: FakeFfmpeg = field(default_factory=FakeFfmpeg)
     stages: Recorder = field(default_factory=Recorder)
     size: tuple[int, int] = (1280, 720)
+    cuda: bool = False  # the tests run as on a machine without a video card
 
     def probe(self, path: Path) -> VideoInfo:
         assert path.name == VIDEO_FILE
@@ -85,6 +87,7 @@ class Fakes:
             ffmpeg=self.ffmpeg,
             probe=self.probe,
             stages=self.stages.stages(),
+            cuda_available=lambda: self.cuda,
         )
 
 
@@ -236,7 +239,11 @@ def test_run_ingest_unreadable_src_mp4_is_an_ingest_error_with_a_hint(
 
     tools = fakes.tools()
     tools = IngestTools(
-        downloader=tools.downloader, ffmpeg=tools.ffmpeg, probe=broken_probe, stages=tools.stages
+        downloader=tools.downloader,
+        ffmpeg=tools.ffmpeg,
+        probe=broken_probe,
+        stages=tools.stages,
+        cuda_available=tools.cuda_available,
     )
 
     with pytest.raises(IngestError, match=r"src\.mp4.*delete it"):
@@ -630,3 +637,72 @@ def test_run_ingest_passes_the_match_directory_and_id_to_the_team_and_corner_ste
     for name in ("teams", "corner_tags"):
         assert by_name[name][1] == (match_dir, VID)
         assert by_name[name][2] == {"force": False}
+
+
+@pytest.mark.unit
+def test_run_ingest_with_cuda_and_no_file_runs_the_model_here_and_goes_on_to_fusion(
+    tmp_path: Path, fakes: Fakes
+) -> None:
+    fakes.cuda = True
+
+    result = ingest(tmp_path, fakes)
+
+    assert not result.waiting_for_tdeed
+    names = [c[0] for c in fakes.stages.calls]
+    assert names == [
+        "scoreboard",
+        "plates",
+        "plate_names",
+        "transcribe",
+        "tdeed",
+        "fusion",
+        "review_candidates",
+        "teams",
+        "corner_tags",
+    ]
+    tdeed_call = fakes.stages.calls[names.index("tdeed")]
+    assert tdeed_call[1][0] == result.match_dir
+    assert tdeed_call[2] == {"device": "auto"}
+    # Fusion reads the file the model run wrote.
+    assert fakes.stages.calls[names.index("fusion")][1][2] == result.match_dir / "tdeed_fake.json"
+    assert states(result.match_dir)["tdeed"] == "done"
+    assert states(result.match_dir)[STAGE] == "done"
+
+
+@pytest.mark.unit
+def test_run_ingest_with_cuda_and_a_file_does_not_run_the_model(
+    tmp_path: Path, fakes: Fakes
+) -> None:
+    fakes.cuda = True
+    match_dir = tmp_path / "data" / VID
+    match_dir.mkdir(parents=True)
+    write_tdeed(match_dir / "tdeed_small.json", [])
+
+    ingest(tmp_path, fakes)
+
+    assert "tdeed" not in [c[0] for c in fakes.stages.calls]
+
+
+@pytest.mark.unit
+def test_run_ingest_without_cuda_never_calls_the_model_stage(tmp_path: Path, fakes: Fakes) -> None:
+    fakes.cuda = False
+
+    result = ingest(tmp_path, fakes)
+
+    assert result.waiting_for_tdeed
+    assert "tdeed" not in [c[0] for c in fakes.stages.calls]
+
+
+@pytest.mark.unit
+def test_run_ingest_failing_model_run_fails_the_ingest_and_names_the_stage(
+    tmp_path: Path,
+) -> None:
+    failing = Fakes()
+    failing.cuda = True
+    failing.stages = Recorder(fail_at="tdeed", error=SpottingError("inference.py failed"))
+
+    with pytest.raises(SpottingError, match=r"stage tdeed failed: inference\.py failed"):
+        ingest(tmp_path, failing)
+
+    assert states(tmp_path / "data" / VID)[STAGE] == "failed"
+    assert "fusion" not in [c[0] for c in failing.stages.calls]

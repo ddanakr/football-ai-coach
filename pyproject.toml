@@ -32,6 +32,22 @@ dev = [
     "pre-commit",
 ]
 
+# T-DEED on a video card (the `tdeed` command, D-080). Only what `inference.py` imports besides
+# torch, with lower bounds and no pins, so that it installs on Python 3.13 (Colab). torch and
+# torchvision are NOT here: Colab has them, and a local GPU needs the build for its own CUDA from
+# pytorch.org (README, section 5); timm pulls them in only when they are missing.
+# Only in this extra, with the owner's agreement (D-080); the base install is unchanged.
+gpu = [
+    "timm>=1.0.3",
+    "huggingface-hub>=0.23",
+    "numpy>=1.26",
+    "wandb",
+    "SoccerNet",
+    "matplotlib",
+    "tabulate",
+    "tqdm",
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
@@ -42,6 +58,8 @@ where = ["src"]
 line-length = 100
 target-version = "py311"
 src = ["src", "tests", "scripts"]
+# The Colab launcher of `tdeed` (D-080) is a notebook: it prints and uses `!` commands on purpose.
+extend-exclude = ["notebooks/tdeed_colab.ipynb"]
 
 [tool.ruff.lint]
 select = [

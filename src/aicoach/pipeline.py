@@ -33,6 +33,7 @@ from aicoach.speech.transcript import TranscriptResult
 from aicoach.spotting.schemas import load_tdeed_file
 from aicoach.stage_common import Logger, elapsed_ms, finish_timing, set_status
 from aicoach.status import utc_now_iso
+from aicoach.tdeed.stage import TdeedResult, run_tdeed
 from aicoach.teams.stage import run_teams
 from aicoach.teams.store import TeamsResult
 
@@ -44,7 +45,7 @@ _T = TypeVar("_T")
 @dataclass(frozen=True)
 class Stages:
     """The stage functions; the real ones by default, fakes in tests (`run` uses three of them,
-    `ingest` also `plate_names`, `transcribe`, `review_candidates`, `teams` and
+    `ingest` also `plate_names`, `transcribe`, `tdeed`, `review_candidates`, `teams` and
     `corner_tags`).
 
     Typed as `Callable[..., X]` on purpose: the stages take different arguments and the
@@ -59,6 +60,7 @@ class Stages:
     review_candidates: Callable[..., ReviewCandidatesResult] = run_review_candidates
     teams: Callable[..., TeamsResult] = run_teams
     corner_tags: Callable[..., CornerTagsFile | None] = run_corner_tags
+    tdeed: Callable[..., TdeedResult] = run_tdeed
 
 
 @dataclass(frozen=True)

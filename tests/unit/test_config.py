@@ -327,3 +327,22 @@ def test_font_file_setting_comes_from_the_environment_and_blank_means_not_set(
 
     monkeypatch.setenv("AICOACH_FONT_FILE", "  ")
     assert load_settings(env_file=_env_file(tmp_path, "")).aicoach_font_file is None
+
+
+@pytest.mark.unit
+def test_tdeed_cache_dir_default_env_file_and_flag(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    assert load_settings().tdeed_cache_dir is None
+
+    env_file = tmp_path / ".env"
+    env_file.write_text("TDEED_CACHE_DIR=from-file\n", encoding="utf-8")
+    assert load_settings(env_file=env_file).tdeed_cache_dir == Path("from-file")
+
+    monkeypatch.setenv("TDEED_CACHE_DIR", "from-env")
+    assert load_settings(env_file=env_file).tdeed_cache_dir == Path("from-env")
+    assert load_settings(env_file=env_file, tdeed_cache_dir=Path("flag")).tdeed_cache_dir == Path(
+        "flag"
+    )
+    monkeypatch.setenv("TDEED_CACHE_DIR", "   ")
+    assert load_settings().tdeed_cache_dir is None

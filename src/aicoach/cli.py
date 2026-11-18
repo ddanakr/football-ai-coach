@@ -74,6 +74,9 @@ from aicoach.spotting.convert import DEFAULT_FPS, DEFAULT_MERGE_RADIUS_S
 from aicoach.spotting.evaluation import DEFAULT_THRESHOLDS, DEVELOPMENT_HALF, format_evaluation
 from aicoach.spotting.run import DEFAULT_GROUND_TRUTH, run_spotting_eval
 from aicoach.status import read_status
+from aicoach.tdeed.stage import default_cache_dir, run_tdeed
+from aicoach.tdeed_cli import add_commands as add_tdeed_commands
+from aicoach.tdeed_cli import run_command as run_tdeed_command
 from aicoach.ui.launch import AppArgs, StartArgs, build_streamlit_command
 from aicoach.youtube import validate_video_id
 
@@ -386,6 +389,7 @@ def build_parser() -> argparse.ArgumentParser:
     rev.add_argument("--tdeed", required=True, help="T-DEED JSON file name in the match dir")
     rev.add_argument("--output", type=Path, default=Path("docs") / "metrics.md")
     add_corner_commands(commands)
+    add_tdeed_commands(commands)
     return parser
 
 
@@ -543,6 +547,7 @@ def _ingest(args: argparse.Namespace) -> int:
         stages=Stages(
             plate_names=partial(run_plate_names, tesseract_cmd=settings.tesseract_cmd),
             transcribe=partial(run_transcribe, settings=settings),
+            tdeed=partial(run_tdeed, cache_dir=settings.tdeed_cache_dir or default_cache_dir()),
         )
     )
     result = run_ingest(
@@ -915,6 +920,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         corner_code = run_corner_command(args)
         if corner_code is not None:
             return corner_code
+        tdeed_code = run_tdeed_command(args)
+        if tdeed_code is not None:
+            return tdeed_code
         return _calibrate(args)
     except AicoachError as err:
         sys.stderr.write(f"error: {err}\n")
