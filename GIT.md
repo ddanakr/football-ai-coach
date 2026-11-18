@@ -35,7 +35,7 @@ Refs: FR-6
 ```
 
 - **Типы:** `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `chore`, `build`, `ci`.
-- **Scope** это имя модуля: `ingest`, `scoreboard`, `plates`, `stage_common`, `spotting`, `speech`, `fusion`, `storage`, `agent`, `eval`, `export`, `ui`, `config`, `deps`, `memory`, `spec` (ТЗ, `docs/TZ.md`).
+- **Scope** это имя модуля: `ingest`, `scoreboard`, `plates`, `stage_common`, `spotting`, `speech`, `fusion`, `storage`, `agent`, `eval`, `export`, `ui`, `config`, `deps`, `memory`, `spec` (ТЗ, `docs/TZ.md`), а также `clips` (клип), `reel` (ролик по категории), `review` (режим проверки), `teams` (команды и форма), `corner_tags` (теги угловых), `docker` (образ и compose). Коммиты, сделанные до этого списка, шли со scope `export`, `agent`, `ui` и `config`.
 - **Subject:** английский, повелительное наклонение, до 72 байт (хук считает байты, см. раздел 6), без точки в конце.
 - **Body** обязателен, если изменение не очевидно из заголовка (причина, компромисс, ссылка на `D-xxx` из `memory/decisions_full.md`).
 - **Breaking change:** `!` после scope и пояснение в body (например, меняется схема базы).
