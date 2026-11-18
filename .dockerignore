@@ -1,0 +1,17 @@
+# An allow list: the build context holds nothing but what the image needs.
+# Keys (.env), data, video, clips, caches and git history never reach the daemon or the image.
+*
+
+!pyproject.toml
+!README.md
+!src/
+!data_labels/
+
+# inside the allowed folders
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+**/.env
+**/*.env
+**/*.mp4
+**/*.wav
