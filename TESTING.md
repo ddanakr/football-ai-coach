@@ -176,6 +176,7 @@ tests/
 │   ├── pipeline_fakes.py        # тестовые функции стадий для команды run: записывают вызовы, могут падать
 │   ├── plate_names_synth.py  transcript_synth.py   # вырезки плашек с текстом; расшифровка речи
 │   ├── agent_synth.py  openrouter_synth.py   # двойники модели агента и записанные ответы OpenRouter
+│   ├── tdeed_synth.py           # двойники git, ffmpeg, `inference.py` и скачивания для стадии `tdeed`
 │   └── episode_synth.py  corner_synth.py  review_synth.py  reel_synth.py   # клипы, теги угловых, слой кандидатов, ролики
 ├── unit/
 │   ├── test_stage_common.py  test_status_and_logging.py  test_config.py  test_settings_openrouter.py   # общие помощники стадий, статус, логи, настройки
@@ -186,6 +187,7 @@ tests/
 │   ├── plates/       test_detect.py   test_tracks.py   test_logos.py   test_teams.py   test_assemble.py   test_stage.py   test_cli.py
 │   ├── plate_names/  test_text.py   test_lineup.py   test_reader.py   test_assemble.py   test_stage.py   test_cli.py
 │   ├── spotting/     test_schemas.py   test_convert.py   test_evaluation.py   test_cli.py
+│   ├── tdeed/        test_timecode.py   test_device.py   test_commands.py   test_runner.py   test_workdir_output.py   test_stage.py   test_cli.py   test_compare.py   test_cpu_runner.py   test_notebook.py   # без git, ffmpeg, torch, видеокарты и сети; `test_notebook.py`: ноутбук без выводов, без путей и токенов, без переустановки torch
 │   ├── speech/       test_chunks.py   test_transcript.py   test_transcriber.py   test_openrouter_stt.py   test_stage.py   test_segments_metrics.py   test_check_file.py   test_audio_and_run.py   test_cli_provider.py   test_cli_transcribe.py
 │   ├── fusion/       test_config_and_halves.py   test_rules.py   test_stage.py   test_pipeline.py   test_cli.py   # test_replay_suppression.py: план, детектор повторов (D-032)
 │   ├── ingest/       test_url.py   test_download.py   test_lock.py   test_media.py   test_stage.py   test_cli.py

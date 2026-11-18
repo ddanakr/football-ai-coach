@@ -62,14 +62,22 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 ├── README.md  pyproject.toml  .env.example
 ├── Dockerfile  docker-compose.yml  .dockerignore   # образ для процессора: интерфейс и команды по готовому матчу (D-079)
 ├── scripts/            # check.py: полный контроль качества
+├── notebooks/          # tdeed_colab.ipynb: единственный разрешённый ноутбук, тонкий запуск `tdeed` в Colab, без выводов ячеек (D-080)
 ├── configs/            # план: пороги, окна NMS, лексиконы, шаблоны плашек (yaml); пока пороги лежат в pydantic-моделях стадий (D-031)
 ├── docs/               # TZ.md; протокол разметки; report.md (краткий отчёт); metrics.md (метрики из запусков)
 ├── src/aicoach/
-│   ├── cli.py          # точка входа: python -m aicoach.cli <команда>; команды: ingest, scoreboard, scoreboard-calibrate, plates, plate-names, transcribe, spotting-eval, fuse, run, ui, clip, describe, reel, export-labels, agent-eval, speech-test, final-eval, review-candidates, review-stats, review-eval; teams, corner-tags, corner-eval регистрирует `corner_cli.py`
+│   ├── cli.py          # точка входа: python -m aicoach.cli <команда>; команды: ingest, scoreboard, scoreboard-calibrate, plates, plate-names, transcribe, spotting-eval, fuse, run, ui, clip, describe, reel, export-labels, agent-eval, speech-test, final-eval, review-candidates, review-stats, review-eval; teams, corner-tags, corner-eval регистрирует `corner_cli.py`; tdeed, tdeed-compare регистрирует `tdeed_cli.py`
 │   ├── pipeline.py     # команда `run`: scoreboard, plates, fusion по порядку, статус `run` в status.json; модели в ней нет
 │   ├── status.py       # status.json каталога матча: состояние стадий (running, done, failed) и прогресс
 │   ├── stage_common.py # общие помощники стадий: атомарная запись, статус, прогресс, запись сбоя
 │   ├── corner_cli.py   # команды `teams`, `corner-tags`, `corner-eval` (D-078), подключаются из `cli.py`
+│   ├── tdeed_cli.py    # команды `tdeed` и `tdeed-compare` (D-080), подключаются из `cli.py`
+│   ├── tdeed/          # T-DEED на видеокарте (D-080): код T-DEED на коммите `d953b4d` в кэш вне репозитория, неизменённый `inference.py` отдельным процессом, GPL-код не импортируется
+│   │   ├── stage.py        # стадия `tdeed`: код, чекпойнт, вход ffmpeg (25 к/с, 796×448), запуск, результат `tdeed_*.json` (или `tdeedseg_*.json` для отрезка), статус и время
+│   │   ├── commands.py  runner.py  workdir.py  device.py   # чистые списки команд; дочерние процессы, скачивание, хеши; рабочий каталог с копией конфига; выбор устройства (`auto` требует CUDA)
+│   │   ├── cpu_runner.py   # лаунчер для явного `--device cpu`: подменяет `cuda` на `cpu` в torch и запускает `inference.py` как есть; запускается по пути, пакет не импортирует
+│   │   ├── output.py  timecode.py  config.py   # конвертация вывода (сдвиг кадров отрезка), тайм-коды и план отрезка (сетка 24 с), фиксированные параметры запуска
+│   │   └── compare.py      # `tdeed-compare`: по классам число срабатываний, пары по времени, разница оценок; `--fuse-thresholds`
 │   ├── clips.py        # команда `clip`: экспорт клипа FFmpeg (D-056): окно `clip_window`, время из events_current, перекодирование H.264/AAC, `clips/` рядом с видео, готовый файл не режется заново
 │   ├── vlm.py  episode.py   # видеомодель по клипу через OpenRouter и описание эпизода (FR-11, D-073, D-074): кэш в `episode_descriptions/`, пометка «по клипу, не проверено»
 │   ├── reel.py  labels_export.py   # ролик по категории одним файлом (FR-10, D-076) и экспорт меток в формат эталона (FR-9, D-076)
