@@ -69,3 +69,17 @@ def test_notebook_never_overwrites_files_on_drive_and_does_not_import_tdeed_code
 
     assert "destination.exists()" in text  # the copy back is no-clobber
     assert "inference.py" not in text  # the notebook only calls the command
+
+
+@pytest.mark.unit
+def test_notebook_does_not_reinstall_torch_and_checks_the_imports_and_versions() -> None:
+    install = next("".join(c["source"]) for c in _load()["cells"] if c["id"] == "install")
+    check = next("".join(c["source"]) for c in _load()["cells"] if c["id"] == "check")
+
+    assert '!pip install -q ".[gpu]"' in install
+    assert not re.search(r"pip install[^\n]*(torch|numpy|timm)", install)  # only the project
+    assert "==" not in install  # no pins in the notebook
+    assert "import aicoach" in check
+    for library in ("torch", "numpy", "timm"):
+        assert f"import {library}" in check
+    assert "torch.cuda.is_available()" in check

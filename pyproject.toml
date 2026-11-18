@@ -32,16 +32,15 @@ dev = [
     "pre-commit",
 ]
 
-# T-DEED on a video card (the `tdeed` command, D-080). The pins are those of the T-DEED README
-# (torch 2.3.1, timm 1.0.3, numpy 1.26.4); the rest are what its `inference.py` imports and its
-# `requirements.txt` lacks (`wandb`, `SoccerNet`, `matplotlib`) or what timm needs (hub below 1).
+# T-DEED on a video card (the `tdeed` command, D-080). Only what `inference.py` imports besides
+# torch, with lower bounds and no pins, so that it installs on Python 3.13 (Colab). torch and
+# torchvision are NOT here: Colab has them, and a local GPU needs the build for its own CUDA from
+# pytorch.org (README, section 5); timm pulls them in only when they are missing.
 # Only in this extra, with the owner's agreement (D-080); the base install is unchanged.
 gpu = [
-    "torch==2.3.1",
-    "torchvision==0.18.1",
-    "timm==1.0.3",
-    "numpy==1.26.4",
-    "huggingface-hub>=0.23,<1",
+    "timm>=1.0.3",
+    "huggingface-hub>=0.23",
+    "numpy>=1.26",
     "wandb",
     "SoccerNet",
     "matplotlib",
