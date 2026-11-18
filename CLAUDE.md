@@ -54,27 +54,31 @@ YouTube URL → ingest → [scoreboard+plates] ┐
                      → [speech]              ┘
 ```
 
-Раскладка репозитория. Пометка «план» означает, что модуля или файла в коде ещё нет (состояние на 2026-11-08):
+Раскладка репозитория. Пометка «план» означает, что модуля или файла в коде ещё нет (состояние на 2026-11-18):
 
 ```
 .
 ├── CLAUDE.md  GIT.md  MEMORY.md  SKILLS.md  TESTING.md
 ├── README.md  pyproject.toml  .env.example
+├── Dockerfile  docker-compose.yml  .dockerignore   # образ для процессора: интерфейс и команды по готовому матчу (D-079)
 ├── scripts/            # check.py: полный контроль качества
 ├── configs/            # план: пороги, окна NMS, лексиконы, шаблоны плашек (yaml); пока пороги лежат в pydantic-моделях стадий (D-031)
-├── docs/               # TZ.md; протокол разметки
+├── docs/               # TZ.md; протокол разметки; report.md (краткий отчёт); metrics.md (метрики из запусков)
 ├── src/aicoach/
-│   ├── cli.py          # точка входа: python -m aicoach.cli <команда>; команды: scoreboard, scoreboard-calibrate, plates, plate-names, transcribe, spotting-eval, fuse, run, ingest, ui, clip
+│   ├── cli.py          # точка входа: python -m aicoach.cli <команда>; команды: ingest, scoreboard, scoreboard-calibrate, plates, plate-names, transcribe, spotting-eval, fuse, run, ui, clip, describe, reel, export-labels, agent-eval, speech-test, final-eval, review-candidates, review-stats, review-eval; teams, corner-tags, corner-eval регистрирует `corner_cli.py`
 │   ├── pipeline.py     # команда `run`: scoreboard, plates, fusion по порядку, статус `run` в status.json; модели в ней нет
 │   ├── status.py       # status.json каталога матча: состояние стадий (running, done, failed) и прогресс
 │   ├── stage_common.py # общие помощники стадий: атомарная запись, статус, прогресс, запись сбоя
+│   ├── corner_cli.py   # команды `teams`, `corner-tags`, `corner-eval` (D-078), подключаются из `cli.py`
 │   ├── clips.py        # команда `clip`: экспорт клипа FFmpeg (D-056): окно `clip_window`, время из events_current, перекодирование H.264/AAC, `clips/` рядом с видео, готовый файл не режется заново
+│   ├── vlm.py  episode.py   # видеомодель по клипу через OpenRouter и описание эпизода (FR-11, D-073, D-074): кэш в `episode_descriptions/`, пометка «по клипу, не проверено»
+│   ├── reel.py  labels_export.py   # ролик по категории одним файлом (FR-10, D-076) и экспорт меток в формат эталона (FR-9, D-076)
 │   ├── errors.py       # иерархия исключений
 │   ├── namematch.py    # общее сопоставление имён (D-070) для плашек, речи и агента: свёртка (регистр, ё, казахские буквы, латинские двойники), `find_player` (целое имя против состава, с `aliases`), `find_mentions` (слова текста против фамилий и прозвищ), `same_word`, `name_matches`; результат ссылка на игрока (сторона, номер, написание состава) и исходное слово
 │   ├── logging_setup.py  # structlog, JSON-строки в stderr
 │   ├── openrouter.py   # общий HTTP-доступ к OpenRouter: ключ в заголовке, повторы на 429 и 5xx, `OpenRouterError`, разбор стоимости и счётчиков (D-068)
 │   ├── spend.py        # журнал трат `spend_ledger.jsonl` и месячный бюджет `AICOACH_BUDGET_USD`; обёртки `MeteredLLM` и `MeteredTranscriber` (D-067)
-│   ├── config.py       # `Settings` (pydantic-settings): GEMINI_API_KEY, GEMINI_MODEL, AICOACH_DATA_ROOT, TESSERACT_CMD; приоритет флаг CLI → переменная окружения → `.env` в корне → умолчание; `load_settings`, `read_gemini_api_key` (D-057, D-060)
+│   ├── config.py       # `Settings` (pydantic-settings): ключи, модели, поставщик, бюджет, пути, шрифт; перечень настроек в `SKILLS.md`, раздел «Настройки»; приоритет флаг CLI → переменная окружения → `.env` в корне → умолчание; `load_settings`, `read_gemini_api_key` (D-057, D-060)
 │   ├── youtube.py      # id видео YouTube (проверка: 11 знаков) и плоская ссылка просмотра; общий для ingest и ui
 │   ├── i18n/           # тексты интерфейса: ru.py (казахский: план)
 │   ├── domain/         # события и категории (events.py)
@@ -97,7 +101,7 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 │   │   ├── text.py  lineup.py  assemble.py   # чистка текста плашки; загрузчик состава (`Player` с прозвищами из колонки `aliases`); чистая сборка имён плашки (сопоставление в `aicoach/namematch.py`)
 │   │   └── schemas.py      # pydantic-модели plate_names.json и параметры стадии
 │   ├── storage/        # SQLite-хранилище событий: db.py, schema.py, models.py, repository.py (миграций нет, версия схемы 1)
-│   ├── eval/           # сопоставление, метрики, bootstrap, схемы входа, отчёт в Markdown
+│   ├── eval/           # сопоставление, метрики, bootstrap, схемы входа, отчёт в Markdown; `final.py`, `final_run.py` (команда `final-eval`, D-064), `gemini_baseline.py` (сравнение с Gemini), `stats.py`
 │   ├── spotting/       # адаптер предсказаний ветки B: файл T-DEED (код T-DEED не копируется, D-046), только 1-й тайм (D-045)
 │   │   ├── schemas.py      # pydantic-схема JSON T-DEED (17 классов) и загрузка (`SpottingError`)
 │   │   ├── convert.py      # t_v = frame / fps, соответствие классов (D-043), слияние дублей, порог, отбор по таймам (D-044)
@@ -135,6 +139,11 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 │   │   ├── loop.py         # `Agent`: цикл вызовов (до 6 на вопрос), одна повторная попытка, отказ; системный промпт в `system_prompt.md`
 │   │   ├── evaluation.py   # команда `agent-eval`: вопросы CSV → `answers.csv`, сводка проверки
 │   │   └── service.py  messages.py  journal.py  pricing.py   # сборка агента для матча и `make_llm` (поставщик из настроек `AICOACH_LLM_PROVIDER`, обёртка журналом трат); сообщения; журнал `agent_log.jsonl`; цены с источником
+│   ├── review/         # режим проверки (D-075): слой кандидатов-ударов T-DEED, журнал решений, `review-eval`, `review-stats`
+│   │   ├── candidates.py  schemas.py  stage.py   # чистая сборка слоя, модели `review_candidates.json`, команда `review-candidates`
+│   │   └── log.py  stats.py  evaluation.py       # журнал `review_log.jsonl`, замер окна времени, Recall объединения «события + кандидаты»
+│   ├── teams/          # названия команд и цвет формы (D-078): `title.py` (заголовок видео), `kits.py` (голосование по клипам), `store.py` (`teams.json`, ручное `teams_override.json`), `stage.py`
+│   ├── corner_tags/    # структурные теги угловых по клипам (D-078): `tagger.py` (запрос и разбор ответа), `schemas.py`, `stage.py` (`corner_tags.json`), `view.py` (чтение, фильтры), `evaluation.py` и `run.py` (`corner-eval`)
 │   └── ui/             # просмотр событий, ручные правки и экспорт клипа (Streamlit, D-054, D-055, D-056)
 │       ├── app.py          # тонкий скрипт Streamlit (D-062): сверху плеер st.video слева и панель «Агент» справа (колонки 3 : 2), под ними таблица событий с выбором строки на всю ширину, фильтры и экспорт клипа в боковой панели
 │       ├── logic.py        # чистые функции: фильтры, mm:ss, подписи, youtube_link, строки таблицы, выбор строки → событие
@@ -142,6 +151,9 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 │       ├── launch.py       # аргументы скрипта после `--` и команда запуска streamlit; ID видео только аргумент процесса
 │       ├── ingest_jobs.py  # блок «Новый матч»: фоновый запуск `ingest` отдельным процессом с журналом, список шагов из status.json, сохранение загруженного lineups.csv
 │       ├── agent_panel.py  # панель «Агент» справа от плеера: прокручиваемая история фиксированной высоты, поле вопроса внутри панели, кнопки-ссылки с иконкой, минутой и временем видео переводят плеер на событие
+│       ├── review_panel.py  review_logic.py   # режим проверки: список «события + кандидаты» с ✓/✗, чистая логика выбора строк
+│       ├── reel_panel.py  labels_panel.py     # блоки «Ролик по категории» и «Разметка» (D-076)
+│       ├── episode_panel.py  corner_panel.py  # кнопка «Описать эпизод» (D-073), фильтры угловых и блок «Команды и форма» (D-078)
 │       ├── agent_chat.py   # чистые помощники панели: текст ответа, ссылки без повторов, строка проверки
 │       └── data.py         # события, запись правок в журнал edits и границы таймов через слой хранилища
 ├── tests/              # структура в TESTING.md
@@ -188,7 +200,7 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 
 **Отказоустойчивость:**
 
-- Иерархия исключений в `errors.py`: базовый `AicoachError`; наследники `IngestError`, `ScoreboardParseError`, `PlatesError`, `SpottingError`, `TranscriptionError`, `FusionError`, `StorageError`, `EvalError`, `AgentValidationError`, `ConfigError`, `ExternalServiceError`, `ExportError`, `BudgetExceededError`.
+- Иерархия исключений в `errors.py`: базовый `AicoachError`; наследники `IngestError`, `ScoreboardParseError`, `PlatesError`, `SpottingError`, `TranscriptionError`, `FusionError`, `StorageError`, `EvalError`, `ConfigError`, `ExternalServiceError`, `ExportError`, `BudgetExceededError`.
 - Запрещены голый `except:`, `except Exception: pass` и проглатывание ошибки без записи в лог. Исключение либо обрабатывается осмысленно, либо оборачивается в типизированное и поднимается выше с `raise ... from err`.
 - Вход проверяется на границах (CLI, файлы, ответы API и моделей) схемами `pydantic`. Внутри ядра данные считаются проверенными.
 - Внешние вызовы (LLM API, загрузка): таймаут обязателен, повтор с экспоненциальной задержкой на временные ошибки (429, 5xx, сеть), затем `ExternalServiceError`. Ответ языковой модели проверяется схемой и валидатором ссылок.
@@ -198,7 +210,7 @@ YouTube URL → ingest → [scoreboard+plates] ┐
 
 **Конфигурация и секреты (жёстко):**
 
-- Никаких хардкод-путей, URL, ключей, порогов и окон в коде. Пути строятся от `Settings.data_dir` через `pathlib`. Пороги и окна лежат в `configs/*.yaml`, читаются через `Settings`.
+- Никаких хардкод-путей, URL, ключей, порогов и окон в коде. Пути строятся от `Settings.data_dir` через `pathlib`. Пороги и окна лежат в `configs/*.yaml`, читаются через `Settings`. Факт на 2026-11-18: `configs/` ещё нет, пороги стадий лежат в pydantic-моделях (долг D-031).
 - Секреты только из переменных окружения или `.env` (в `.gitignore`). В репозитории лежит `.env.example` без значений. Секреты хранятся как `SecretStr` и не выводятся в логи и в repr.
 - Найден секрет в коде или в истории: остановись, сообщи пользователю, не переписывай историю без просьбы.
 

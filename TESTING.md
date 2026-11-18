@@ -167,43 +167,47 @@ exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError"]
 
 ```
 tests/
-├── conftest.py                  # блокировка сети, офлайн-переменные, общие фикстуры
+├── conftest.py  test_smoke.py   # блокировка сети, офлайн-переменные, общие фикстуры; импорт пакета
 ├── fixtures/                    # только синтетика
 │   ├── factories.py             # фабрики событий, плашек, реплик
-│   ├── scoreboard_synth.py      # кадры табло, нарисованные OpenCV
+│   ├── scoreboard_synth.py  plates_synth.py   # кадры табло и плашек, нарисованные OpenCV
 │   ├── ui_synth.py              # события и маленькая база для тестов интерфейса
 │   ├── fusion_synth.py          # плашки, plates.json и входные файлы стадии fuse без картинок, файл T-DEED
 │   ├── pipeline_fakes.py        # тестовые функции стадий для команды run: записывают вызовы, могут падать
-│   ├── transcripts/             # маленькие JSON
-│   └── labels/                  # синтетическая разметка
+│   ├── plate_names_synth.py  transcript_synth.py   # вырезки плашек с текстом; расшифровка речи
+│   ├── agent_synth.py  openrouter_synth.py   # двойники модели агента и записанные ответы OpenRouter
+│   └── episode_synth.py  corner_synth.py  review_synth.py  reel_synth.py   # клипы, теги угловых, слой кандидатов, ролики
 ├── unit/
-│   ├── domain/       test_time_mapping.py   test_events.py
-│   ├── test_stage_common.py                 # общие помощники стадий: атомарная запись, статус, прогресс
-│   ├── scoreboard/   test_clock_parser.py   test_score_history.py   test_plate_parser.py
+│   ├── test_stage_common.py  test_status_and_logging.py  test_config.py  test_settings_openrouter.py   # общие помощники стадий, статус, логи, настройки
+│   ├── test_namematch.py  test_openrouter_http.py  test_spend.py  test_spend_vision.py   # сопоставление имён, HTTP OpenRouter, журнал трат и бюджет
+│   ├── test_clips.py  test_clip_cli.py  test_reel.py  test_reel_cli.py  test_labels_export.py   # клип, ролик по категории, экспорт меток (без ffmpeg)
+│   ├── test_vlm.py  test_episode.py  test_describe_cli.py  test_garbage_answers.py   # видеомодель, описание эпизода, мусорные ответы моделей
+│   ├── scoreboard/   test_reader.py   test_board.py   test_glyphs.py   test_assemble.py   test_score_changes.py   test_offsets.py   test_mapping.py   test_calibrate.py   test_video.py   test_stage.py   test_cli.py
 │   ├── plates/       test_detect.py   test_tracks.py   test_logos.py   test_teams.py   test_assemble.py   test_stage.py   test_cli.py
+│   ├── plate_names/  test_text.py   test_lineup.py   test_reader.py   test_assemble.py   test_stage.py   test_cli.py
 │   ├── spotting/     test_schemas.py   test_convert.py   test_evaluation.py   test_cli.py
-│   ├── speech/       test_lexicon.py        test_language_routing.py   test_name_normalization.py
+│   ├── speech/       test_chunks.py   test_transcript.py   test_transcriber.py   test_openrouter_stt.py   test_stage.py   test_segments_metrics.py   test_check_file.py   test_audio_and_run.py   test_cli_provider.py   test_cli_transcribe.py
 │   ├── fusion/       test_config_and_halves.py   test_rules.py   test_stage.py   test_pipeline.py   test_cli.py   # test_replay_suppression.py: план, детектор повторов (D-032)
-│   ├── ui/           test_logic.py   test_edits.py   test_edit_data.py   test_launch_and_data.py   test_cli.py   test_app.py   test_app_edits.py   # test_app.py: AppTest, помечен allow_hosts для loopback (цикл asyncio на Windows)
-│   ├── eval/         test_matching.py       test_metrics.py            test_bootstrap.py
-│   ├── storage/      test_edits_log.py      test_events_view.py
-│   ├── agent/        test_tools.py          test_citation_validator.py
-│   └── export/       test_clip_bounds.py
-├── integration/
-│   ├── test_stage_chain_synthetic.py        # цепочка стадий на синтетическом «матче»
-│   ├── test_ffmpeg_clip_export.py           # нужен ffmpeg, сети нет
-│   ├── test_storage_concurrency.py          # чтение во время записи
-│   └── test_agent_with_fake_llm.py          # агент целиком на тестовой модели
-├── data_validation/
-│   ├── test_event_schema.py                 # схемы events, plates, transcript
-│   ├── test_sn_features_contract.py         # форма (N, 512), 2 fps, без NaN, на мини-образце
-│   ├── test_labels_format.py                # формат эталона, допустимые категории, t_v в пределах видео
-│   └── test_config_files.py                 # configs/*.yaml валидны, пороги в допустимых диапазонах
-└── real_data/                               # @real_data: пропускается без AICOACH_REAL_MATCH_VIDEO
+│   ├── ingest/       test_url.py   test_download.py   test_lock.py   test_media.py   test_stage.py   test_cli.py
+│   ├── storage/      test_event_store.py    # события, журнал `edits`, представление `events_current`, откат
+│   ├── eval/         test_matching.py   test_metrics.py   test_bootstrap.py   test_stats.py   test_report.py   test_ground_truth_loader.py   test_committed_ground_truth.py   test_final.py   test_final_run.py   test_gemini_baseline.py
+│   ├── agent/        test_tools.py   test_validator.py   test_loop.py   test_context.py   test_render_and_evaluation.py   test_commentary_tools.py   test_describe_tool.py   test_corner_tags_agent.py   test_llm_gemini.py   test_llm_openrouter.py   test_make_llm.py   test_make_video_model.py   test_pricing_and_usage.py   test_service_and_chat.py   test_cli.py
+│   ├── review/       test_candidates.py   test_log.py   test_stage.py   test_evaluation.py   test_stats.py   test_cli.py
+│   ├── teams/        test_title_and_kits.py   test_store_and_stage.py
+│   ├── corner_tags/  test_schema_and_tagger.py   test_stage_and_view.py   test_evaluation.py
+│   └── ui/           test_logic.py   test_edits.py   test_edit_data.py   test_launch_and_data.py   test_players.py   test_ingest_jobs.py   test_review_logic.py   test_cli.py   # чистая логика
+│                     test_app.py   test_app_edits.py   test_app_clips.py   test_app_agent.py   test_app_ingest.py   test_app_review.py   test_app_reel.py   test_app_episode.py   test_app_corners.py   # AppTest; test_app.py помечен allow_hosts для loopback (цикл asyncio на Windows)
+├── integration/                 # сети нет; нужны ffmpeg, Tesseract или переменные окружения, иначе пропуск
+│   ├── test_ffmpeg_clip_export.py   test_reel_ffmpeg.py   # нужен ffmpeg (и ffprobe для ролика)
+│   ├── test_tesseract_reader.py                           # нужен Tesseract с `kaz` и `rus`
+│   └── test_gemini_live.py  test_openrouter_live.py  test_speech_live.py  test_speech_stage_live.py  test_episode_live.py  test_corner_tags_live.py   # живые вызовы (маркер `live_llm`): только с AICOACH_LIVE_LLM=1, ключом и сетью; по умолчанию пропускаются
+└── real_data/                   # @real_data: пропускается без AICOACH_REAL_MATCH_VIDEO
     ├── test_scoreboard_known_pairs.py       # scoreboard.json реального матча против двух пар владельца
     ├── test_ui_real_events.py               # чтение и форматирование событий из реального aicoach.db рядом с видео
     └── test_plates_reference.py             # plates.json против контрольных времён владельца (plates_reference.json рядом с видео)
 ```
+
+Из задуманного в первой версии файлов нет: `tests/data_validation/` (маркер `data_validation` объявлен, тестов нет), `test_stage_chain_synthetic.py`, `test_storage_concurrency.py`, `test_agent_with_fake_llm.py` (цепочки стадий и агент проверяют `fusion/test_pipeline.py`, `ingest/test_stage.py`, `agent/test_loop.py`), `unit/domain/`, `unit/export/` (клипы проверяют `test_clips.py` и `test_reel.py`), `speech/test_lexicon.py`, `test_language_routing.py`, `test_name_normalization.py` (имена проверяет `unit/test_namematch.py`).
 
 ## 6. Чек-лист перед завершением задачи
 
