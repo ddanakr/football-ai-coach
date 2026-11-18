@@ -201,6 +201,8 @@ TDEED_ESTIMATE = (
 )
 TDEED_COMPARE_SAME = "совпадает"
 TDEED_COMPARE_DIFF = "различия"
+TDEED_COMPARE_ALL = "все срабатывания"
+TDEED_COMPARE_FUSE = "выше порогов слияния"
 INGEST_HEADER = "Новый матч"
 INGEST_URL = "Ссылка на YouTube"
 INGEST_URL_HELP = "Например https://www.youtube.com/watch?v=… или https://youtu.be/…"

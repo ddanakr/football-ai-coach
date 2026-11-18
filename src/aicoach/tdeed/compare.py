@@ -11,7 +11,9 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from aicoach.errors import SpottingError
+from aicoach.fusion.config import FuseConfig
 from aicoach.i18n import ru
+from aicoach.spotting.convert import LABEL_TO_EVENT
 from aicoach.spotting.schemas import TDeedFile
 from aicoach.tdeed.config import FPS
 from aicoach.tdeed.timecode import format_timecode
@@ -66,6 +68,29 @@ class Comparison:
                     f"(наибольшая {c.max_score_diff:.4f})"
                 )
         return found
+
+
+def filter_by_fuse_thresholds(data: TDeedFile, config: FuseConfig | None = None) -> TDeedFile:
+    """The predictions that `fuse` would take: only shots, corners and fouls, each with a
+    confidence at or above the threshold of its class (`FuseConfig.model_thresholds`).
+
+    Goals, substitutions and the classes without a counterpart are not used by `fuse` from the
+    model, so they are dropped. Duplicates are not merged: this is a filter, not the whole rule.
+    """
+    thresholds = {str(k): v for k, v in (config or FuseConfig()).model_thresholds.items()}
+    kept = []
+    for p in data.predictions:
+        event_type = LABEL_TO_EVENT[p.label]
+        if event_type is not None and p.confidence >= thresholds.get(event_type.value, math.inf):
+            kept.append(p)
+    return TDeedFile(predictions=tuple(kept))
+
+
+def verdict(result: "Comparison") -> str:
+    """One line: `совпадает`, or `различия: ...`."""
+    if result.same:
+        return ru.TDEED_COMPARE_SAME
+    return f"{ru.TDEED_COMPARE_DIFF}: " + "; ".join(result.differences())
 
 
 def _times(
@@ -191,8 +216,5 @@ def format_comparison(result: Comparison) -> str:
         f"{c.max_score_diff:>12.4f}"
         for c in result.classes
     ]
-    if result.same:
-        lines.append(ru.TDEED_COMPARE_SAME)
-    else:
-        lines.append(f"{ru.TDEED_COMPARE_DIFF}: " + "; ".join(result.differences()))
+    lines.append(verdict(result))
     return "\n".join(lines) + "\n"

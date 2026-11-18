@@ -205,3 +205,56 @@ def test_format_result_whole_match_has_no_estimate_and_cached_run_says_so() -> N
 
     assert "Оценка" not in tdeed_cli.format_result(whole)
     assert "Уже есть: x.json (3 срабатываний)" in tdeed_cli.format_result(cached)
+
+
+@pytest.mark.unit
+def test_tdeed_compare_fuse_thresholds_prints_both_verdicts_and_differs_on_either(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Only a low-confidence throw-in differs: "all" differ, "above the fuse thresholds" agree.
+    common = [(2500, "Foul", 0.5), (2800, "Corner", 0.3)]
+    write_tdeed(tmp_path / "a.json", [*common, (3000, "Throw-in", 0.4)])
+    write_tdeed(tmp_path / "b.json", common)
+
+    code = main(
+        [
+            "tdeed-compare",
+            str(tmp_path / "a.json"),
+            str(tmp_path / "b.json"),
+            "--window",
+            "00:00-10:00",
+            "--edge-margin",
+            "0",
+            "--fuse-thresholds",
+        ]
+    )
+
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "все срабатывания: различия: Throw-in: 1 против 0" in out
+    assert out.strip().endswith("выше порогов слияния: совпадает")
+    assert "== выше порогов слияния (shot 0.2, corner 0.05, foul 0.2)" in out
+
+
+@pytest.mark.unit
+def test_tdeed_compare_fuse_thresholds_same_files_exit_0(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    write_tdeed(tmp_path / "a.json", [(2500, "Foul", 0.5)])
+
+    code = main(
+        [
+            "tdeed-compare",
+            str(tmp_path / "a.json"),
+            str(tmp_path / "a.json"),
+            "--window",
+            "00:00-10:00",
+            "--edge-margin",
+            "0",
+            "--fuse-thresholds",
+        ]
+    )
+
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert code == 0
+    assert lines[-2:] == ["все срабатывания: совпадает", "выше порогов слияния: совпадает"]

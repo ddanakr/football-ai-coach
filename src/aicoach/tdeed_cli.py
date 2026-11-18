@@ -9,6 +9,7 @@ from pathlib import Path
 
 from aicoach.config import load_settings
 from aicoach.errors import SpottingError
+from aicoach.fusion.config import FuseConfig
 from aicoach.i18n import ru
 from aicoach.spotting.schemas import load_tdeed_file
 from aicoach.tdeed.compare import (
@@ -16,7 +17,9 @@ from aicoach.tdeed.compare import (
     DEFAULT_SCORE_TOL,
     DEFAULT_TIME_TOL_S,
     compare_tdeed,
+    filter_by_fuse_thresholds,
     format_comparison,
+    verdict,
 )
 from aicoach.tdeed.config import FPS
 from aicoach.tdeed.device import DEVICE_CHOICES
@@ -82,6 +85,12 @@ def add_commands(commands: "argparse._SubParsersAction[argparse.ArgumentParser]"
         help="largest difference of paired confidences (default: %(default)s)",
     )
     compare.add_argument("--fps", type=float, default=FPS, help="frame rate of `frame`")
+    compare.add_argument(
+        "--fuse-thresholds",
+        action="store_true",
+        help="also compare only what `fuse` takes: shots, corners and fouls at or above the "
+        "FuseConfig thresholds of their class; both verdicts are printed, exit 0 needs both",
+    )
 
 
 def format_result(result: TdeedResult) -> str:
@@ -161,17 +170,30 @@ def _run_compare(args: argparse.Namespace) -> int:
     if args.fps <= 0:
         msg = "--fps must be positive"
         raise SpottingError(msg)
-    comparison = compare_tdeed(
-        load_tdeed_file(args.a),
-        load_tdeed_file(args.b),
-        time_tol_s=args.time_tol,
-        score_tol=args.score_tol,
-        window_s=window,
-        edge_margin_s=args.edge_margin,
-        fps=args.fps,
+    first, second = load_tdeed_file(args.a), load_tdeed_file(args.b)
+    options = {
+        "time_tol_s": args.time_tol,
+        "score_tol": args.score_tol,
+        "window_s": window,
+        "edge_margin_s": args.edge_margin,
+        "fps": args.fps,
+    }
+    everything = compare_tdeed(first, second, **options)
+    if not args.fuse_thresholds:
+        sys.stdout.write(format_comparison(everything))
+        return 0 if everything.same else EXIT_DIFFERENT
+    config = FuseConfig()
+    above = compare_tdeed(
+        filter_by_fuse_thresholds(first, config),
+        filter_by_fuse_thresholds(second, config),
+        **options,
     )
-    sys.stdout.write(format_comparison(comparison))
-    return 0 if comparison.same else EXIT_DIFFERENT
+    thresholds = ", ".join(f"{k} {v:g}" for k, v in config.model_thresholds.items())
+    sys.stdout.write(f"== {ru.TDEED_COMPARE_ALL}\n{format_comparison(everything)}")
+    sys.stdout.write(f"== {ru.TDEED_COMPARE_FUSE} ({thresholds})\n{format_comparison(above)}")
+    sys.stdout.write(f"{ru.TDEED_COMPARE_ALL}: {verdict(everything)}\n")
+    sys.stdout.write(f"{ru.TDEED_COMPARE_FUSE}: {verdict(above)}\n")
+    return 0 if everything.same and above.same else EXIT_DIFFERENT
 
 
 def run_command(args: argparse.Namespace) -> int | None:

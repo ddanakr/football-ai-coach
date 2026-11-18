@@ -5,8 +5,9 @@ import math
 import pytest
 
 from aicoach.errors import SpottingError
+from aicoach.fusion.config import FuseConfig
 from aicoach.spotting.schemas import TDeedFile, TDeedLabel, TDeedPrediction
-from aicoach.tdeed.compare import compare_tdeed, format_comparison
+from aicoach.tdeed.compare import compare_tdeed, filter_by_fuse_thresholds, format_comparison
 
 
 def _file(*items: tuple[float, TDeedLabel, float]) -> TDeedFile:
@@ -162,3 +163,32 @@ def test_format_comparison_shows_the_window_and_one_row_per_class() -> None:
     assert "окно сравнения 01:10-04:50" in text
     assert "Foul" in text
     assert "Corner" in text
+
+
+@pytest.mark.unit
+def test_filter_by_fuse_thresholds_keeps_shots_corners_fouls_at_or_above_their_threshold() -> None:
+    data = _file(
+        (10.0, TDeedLabel.SHOTS_ON_TARGET, 0.2),  # shot threshold 0.2, included
+        (11.0, TDeedLabel.SHOTS_OFF_TARGET, 0.19),  # below
+        (12.0, CORNER, 0.05),  # corner threshold 0.05, included
+        (13.0, CORNER, 0.04),
+        (14.0, FOUL, 0.5),
+        (15.0, FOUL, 0.1),
+        (16.0, GOAL, 0.99),  # fuse takes goals from the scoreboard, not from the model
+        (17.0, TDeedLabel.SUBSTITUTION, 0.99),
+        (18.0, TDeedLabel.THROW_IN, 0.99),  # no counterpart
+    )
+
+    kept = filter_by_fuse_thresholds(data)
+
+    assert [p.frame / 25 for p in kept.predictions] == [10.0, 12.0, 14.0]
+
+
+@pytest.mark.unit
+def test_filter_by_fuse_thresholds_uses_the_given_config_and_handles_empty() -> None:
+    config = FuseConfig(model_thresholds={"shot": 0.9, "corner": 0.9, "foul": 0.0})
+
+    kept = filter_by_fuse_thresholds(_file((1.0, FOUL, 0.0), (2.0, CORNER, 0.5)), config)
+
+    assert [p.label for p in kept.predictions] == [FOUL]
+    assert filter_by_fuse_thresholds(TDeedFile(predictions=())).predictions == ()
